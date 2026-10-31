@@ -28,7 +28,7 @@ void cwb_stat(SysConfig *sys, DB *db, DBConfig *conf) {
     sscanf(date, "%4d%2d", &stat.Year, &stat.Mon);
   }
 
-  sprintf(buf, "%s/%s/%s.%s", sys->RealBasePath, sys->StatDirectory, db->db, sys->StatExtension);
+  snprintf(buf, sizeof(buf), "%s/%s/%s.%s", sys->RealBasePath, sys->StatDirectory, db->db, sys->StatExtension);
   analysisLog(buf, &stat);
 
   headHtml(sys, conf);
@@ -63,7 +63,7 @@ int analysisLog(char *dbpath, Stat *stat) {
   stat->eYear = time->tm_year;
   stat->eMon  = time->tm_mon;
   stat->eDay  = time->tm_mday;
-  sprintf(eDate, "%04d%02d%02d", stat->eYear, stat->eMon, stat->eDay);
+  snprintf(eDate, sizeof(eDate), "%04d%02d%02d", stat->eYear, stat->eMon, stat->eDay);
 
   /* 로그 분석 */
   stat->TotalAccess = 0;
@@ -71,7 +71,7 @@ int analysisLog(char *dbpath, Stat *stat) {
   for(year = stat->sYear, mon = stat->sMon, day = stat->sDay; ; day++) {
     if(day == 32) mon++, day = 1;
     if(mon == 13) year++, mon = 1;
-    sprintf(runDate, "%04d%02d%02d", year, mon, day);
+    snprintf(runDate, sizeof(runDate), "%04d%02d%02d", year, mon, day);
     if(strcmp(runDate, eDate) > 0) break;
 
     stats = DBiFetch("stat.%s", runDate);
@@ -234,7 +234,7 @@ void displayLog(SysConfig *sys,  DB *db, Stat *stat, char *width, int fontsize) 
 
     if(tMon == 0) tYear--, tMon = 12;
 
-    sprintf(status_msg, "Analysis previous month : %s, %04d", month[tMon], tYear);
+    snprintf(status_msg, sizeof(status_msg), "Analysis previous month : %s, %04d", month[tMon], tYear);
     printf("    <a href='%s?db=%s&mode=stat&date=%04d%02d%02d' onMouseOver=\"window.status=('%s'); return true;\"><img src='%s/%s' border=0 alt='Backward'></a>\n", sys->ProgramName, db->db, tYear, tMon, 0 , status_msg, sys->HtmlBasePath, sys->IconUp);
   }
   /* Down */
@@ -244,11 +244,11 @@ void displayLog(SysConfig *sys,  DB *db, Stat *stat, char *width, int fontsize) 
 
     if(tMon == 13) tYear++, tMon = 1;
 
-    sprintf(status_msg, "Analysis next month : %s, %04d", month[tMon], tYear);
+    snprintf(status_msg, sizeof(status_msg), "Analysis next month : %s, %04d", month[tMon], tYear);
     printf("    <a href='%s?db=%s&mode=stat&date=%04d%02d%02d' onMouseOver=\"window.status=('%s'); return true;\"><img src='%s/%s' border=0 alt='Backward'></a>\n", sys->ProgramName, db->db, tYear, tMon, 0 , status_msg, sys->HtmlBasePath, sys->IconDown);
   }
   /* List */
-  strcpy(status_msg, "Back to the list");
+  snprintf(status_msg, sizeof(status_msg), "%s", "Back to the list");
   printf("      <a href='%s?db=%s' onMouseOver=\"window.status=('%s'); return true;\"><img src='%s/%s' border=0 alt='List'></a>\n", sys->ProgramName, db->db, status_msg, sys->HtmlBasePath, sys->IconList);
 
   printf("    </td>\n");

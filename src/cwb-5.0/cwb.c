@@ -66,7 +66,7 @@ int main(int argc, char **argv){
 
   /* default error log on : 쿼리 패치도중 발생하는 오류를 기록하기 위해*/
   if(strcmp(sys.LogDirectory, "")) {
-    sprintf(sErrorLog,  "%s/%s/error_log",  sys.RealBasePath, sys.LogDirectory);
+    snprintf(sErrorLog, sizeof(sErrorLog),  "%s/%s/error_log",  sys.RealBasePath, sys.LogDirectory);
     qErrorLog(sErrorLog);
   }
 
@@ -107,8 +107,8 @@ int main(int argc, char **argv){
   로그 파일을 생성하지 않기 위함이다. getConfig()에서 존재하지 않는 
   db로의 접근은 qError()로 차단되어 default log에 남고 끝난다. */
   if(strcmp(sys.LogDirectory, "")) {
-    sprintf(sAccessLog, "%s/%s/access_log.%s", sys.RealBasePath, sys.LogDirectory, qValue("db"));
-    sprintf(sErrorLog,  "%s/%s/error_log.%s",  sys.RealBasePath, sys.LogDirectory, qValue("db"));
+    snprintf(sAccessLog, sizeof(sAccessLog), "%s/%s/access_log.%s", sys.RealBasePath, sys.LogDirectory, qValue("db"));
+    snprintf(sErrorLog, sizeof(sErrorLog),  "%s/%s/error_log.%s",  sys.RealBasePath, sys.LogDirectory, qValue("db"));
     qErrorLog(sErrorLog);
     qErrorContact(conf.AdminEmail);
     if(accessLog(sAccessLog) == FALSE) qError("Access logging(%s) fail.", sAccessLog);
@@ -270,6 +270,7 @@ void getConfig(SysConfig *sys, DB *db, DBConfig *conf){
   if((db->db = qValue("db")) == NULL) qError("You must specify the database name.");
   if(!strcmp(db->db , "")) qError("You must specify the database name.");
   if(qStr09AZaz(db->db) == 0) qError("The operation is canceled. Only regular expression is allowed for the database name(%s).", db->db);
+  if(strlen(db->db) > 32) qError("The database name is too long.");
   /* mode */
   if((db->mode = qValue("mode")) == NULL) db->mode = "list";
   /* page */
@@ -279,6 +280,7 @@ void getConfig(SysConfig *sys, DB *db, DBConfig *conf){
 
   /* category */
   if((db->category = qValue("category")) == NULL) db->category = "";
+  if(strlen(db->category) > 32 || qStr09AZaz(db->category) == 0) qError("Invalid category.");
 
   /* ftype */
   db->ftype = qiValue("ftype");
@@ -291,6 +293,7 @@ void getConfig(SysConfig *sys, DB *db, DBConfig *conf){
   /* fval */
   if((db->fval = qValue("fval")) == NULL) db->fval = "";
   else qRemoveSpace(db->fval);
+  if(strlen(db->fval) > 64) qError("The search string is too long.");
 
   /* fencval */
   db->fencval = qURLencode(db->fval);
@@ -321,7 +324,7 @@ void getConfig(SysConfig *sys, DB *db, DBConfig *conf){
     sprintf(server_name, "%s%s", "http://", tmp);
   }
 
-  sprintf(buf, "%s/%s/%s.%s", sys->RealBasePath, sys->DataDirectory, db->db, sys->DataExtension);
+  snprintf(buf, sizeof(buf), "%s/%s/%s.%s", sys->RealBasePath, sys->DataDirectory, db->db, sys->DataExtension);
   DBOpen(buf, GDBM_READER);
 
 #define FetchNull(NAME, VALUE) { if((conf->NAME = DBFetch("conf." #NAME)) == NULL) conf->NAME = VALUE; }
@@ -464,7 +467,7 @@ void firstMeeting(char *prgName, char *dbName) {
 *******************************************/
 void setCookie(char *name, char *value, int expdays){
   char *cookie;
-  int  set;
+  int  set = FALSE;
 
   if(value == NULL) return;
 
@@ -496,6 +499,9 @@ int accessLog(char *filename) {
 
   if((mode        = qValue("mode")) == NULL) mode = "list";
   if((num         = qValue("num"))  == NULL) num  = "";
+  /* user data may forge log lines */
+  if(qStr09AZaz(mode) == 0) mode = "invalid";
+  if(qStr09AZaz(num)  == 0) num  = "invalid";
 
   if((fp = fopen(filename, "at")) == NULL) return FALSE;
   fprintf(fp, "%04d/%02d/%02d(%02d:%02d) mode=%-10s num=%-5s from %s (%s)\n", time->tm_year, time->tm_mon, time->tm_mday, time->tm_hour, time->tm_min, mode, num, remote_host, http_user_agent);
@@ -509,19 +515,19 @@ void updateStat(SysConfig *sys, DB *db) {
   int stats;
   char buf[0xff];
 
-  sprintf(buf, "%s/%s/%s.%s", sys->RealBasePath, sys->StatDirectory, db->db, sys->StatExtension);
+  snprintf(buf, sizeof(buf), "%s/%s/%s.%s", sys->RealBasePath, sys->StatDirectory, db->db, sys->StatExtension);
   if(qCheckFile(buf) == FALSE) DBCreate(buf, 0644);
   DBOpen(buf, GDBM_WRITER);
 
   time = qGetTime();
 
   if(DBFetch("stat.Started") == NULL) {
-    sprintf(buf, "%04d%02d%02d%02d%02d%02d", time->tm_year, time->tm_mon, time->tm_mday, time->tm_hour, time->tm_min, time->tm_sec);
+    snprintf(buf, sizeof(buf), "%04d%02d%02d%02d%02d%02d", time->tm_year, time->tm_mon, time->tm_mday, time->tm_hour, time->tm_min, time->tm_sec);
     DBStore("stat.Started", buf, GDBM_REPLACE);
   }
 
-  sprintf(buf, "stat.%04d%02d%02d", time->tm_year, time->tm_mon, time->tm_mday);
-  stats = DBiFetch(buf);
+  snprintf(buf, sizeof(buf), "stat.%04d%02d%02d", time->tm_year, time->tm_mon, time->tm_mday);
+  stats = DBiFetch("%s", buf);
   DBiStore(buf, ++stats, GDBM_REPLACE);
 
   DBClose();
@@ -549,7 +555,7 @@ void headHtml(SysConfig *sys, DBConfig *conf) {
     char buf[0xff];
 
     /* Header HTML File Path */
-    sprintf(buf, "%s/%s", sys->RealBasePath, sys->HtmlHead);
+    snprintf(buf, sizeof(buf), "%s/%s", sys->RealBasePath, sys->HtmlHead);
 
     /* Browser Title : db title이 없을때는 system title을 사용한다 */
     if(strcmp(conf->Title, "")) title = conf->Title;
@@ -595,7 +601,7 @@ void tailHtml(SysConfig *sys, DBConfig *conf) {
 
   if(!strcmp(conf->UseSysDefHtml, "true") || !strcmp(sys->AllowDBhtml, "false")) {
     char buf[0xff];
-    sprintf(buf, "%s/%s", sys->RealBasePath, sys->HtmlTail);
+    snprintf(buf, sizeof(buf), "%s/%s", sys->RealBasePath, sys->HtmlTail);
 
     printf("\n<!-- HTML Tailer -->\n");
     qSendFile(buf);
@@ -670,11 +676,30 @@ unsigned int getPermission(char *filename) {
 }
 
 /* String에서 "와 '를 `로 바꾼다 */
+/* Also neutralizes characters which break HTML attributes or JavaScript strings (security) */
 char *exchangeQuot(char *str) {
   int i;
 
+  if(str == NULL) return NULL;
   for(i = 0; str[i] != '\0'; i++) {
     if(str[i] == '\"' || str[i] == '\'') str[i] = '`';
+    else if(str[i] == '\\') str[i] = '/';
+    else if(str[i] == '<') str[i] = '(';
+    else if(str[i] == '>') str[i] = ')';
+    else if(str[i] == '&') str[i] = '+';
+    else if((unsigned char)str[i] < 0x20) str[i] = ' ';
+  }
+
+  return str;
+}
+
+/* Replace control characters(CR, LF, ...) with space, used for mail headers */
+char *removeCtrl(char *str) {
+  int i;
+
+  if(str == NULL) return NULL;
+  for(i = 0; str[i] != '\0'; i++) {
+    if((unsigned char)str[i] < 0x20 || str[i] == 0x7f) str[i] = ' ';
   }
 
   return str;
@@ -684,9 +709,9 @@ char *exchangeQuot(char *str) {
 int license_check(char *LicenseKey, char *SecureKey) {
   char script_path[0xff], *pt, buf[0xff];
 
-  strcpy(script_path, strdup(qGetEnv("SCRIPT_NAME", "")));
+  snprintf(script_path, sizeof(script_path), "%s", strdup(qGetEnv("SCRIPT_NAME", "")));
   for(pt = script_path + strlen(script_path); pt >= script_path && *pt != '/'; pt--) *pt = '\0';
-  sprintf(buf, "%s|http://%s:%s%s", SecureKey, qGetEnv("SERVER_NAME", ""), qGetEnv("SERVER_PORT", ""), script_path);
+  snprintf(buf, sizeof(buf), "%s|http://%s:%s%s", SecureKey, qGetEnv("SERVER_NAME", ""), qGetEnv("SERVER_PORT", ""), script_path);
 
   if(!strcmp(LicenseKey, md5_crypt(buf))) return TRUE;
   return FALSE;

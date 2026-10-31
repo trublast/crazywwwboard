@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
 #include "gdbm.h"
 #include "gdbm_lib.h"
 #include "qDecoder.h"
@@ -51,7 +52,7 @@ int check_password(SysConfig *sys, DB *db, DBConfig *conf){
     if(passflag == TRUE) {
       char *aPassword, buf[0xFF];
 
-      sprintf(buf, "%s/%s/%s.%s", sys->RealBasePath, sys->DataDirectory, db->db, sys->DataExtension);
+      snprintf(buf, sizeof(buf), "%s/%s/%s.%s", sys->RealBasePath, sys->DataDirectory, db->db, sys->DataExtension);
       DBOpen(buf, GDBM_READER);
       if((aPassword = DBFetch("%d.Password", db->num)) == NULL) password_form(sys, db, conf);
       DBClose();
@@ -69,9 +70,9 @@ int check_password(SysConfig *sys, DB *db, DBConfig *conf){
 void password_form(SysConfig *sys, DB *db, DBConfig *conf){
   char button_msg[0xff], handle_num[10 + 1];
 
-  if(strcmp(db->mode, "admin") && db->num != 0) sprintf(handle_num, "(%d)", db->num);
-  else strcpy(handle_num, "");
-  sprintf(button_msg, "Execute '%s%s' operation", db->mode, handle_num);
+  if(strcmp(db->mode, "admin") && db->num != 0) snprintf(handle_num, sizeof(handle_num), "(%d)", db->num);
+  else snprintf(handle_num, sizeof(handle_num), "%s", "");
+  snprintf(button_msg, sizeof(button_msg), "Execute '%s%s' operation", db->mode, handle_num);
 
   headHtml(sys, conf);
 
@@ -84,7 +85,7 @@ void password_form(SysConfig *sys, DB *db, DBConfig *conf){
   printf("  <input type='hidden' name='page'       value='%d'>\n", db->page);
   printf("  <input type='hidden' name='category'   value='%s'>\n", db->category);
   printf("  <input type='hidden' name='ftype'      value='%d'>\n", db->ftype);
-  printf("  <input type='hidden' name='fval'       value='%s'>\n", db->fval);
+  printf("  <input type='hidden' name='fval'       value='%s'>\n", qHtmlEncode(db->fval));
   printf("  <input type='hidden' name='backdepth'  value='%d'>\n", db->backdepth + 1);
 
   printf("  <tr><td colspan=2><br></td></tr>\n");
@@ -133,7 +134,7 @@ void admin_form(SysConfig *sys, DB *db, DBConfig *conf){
   printf("<form method='post' action='%s'>\n", sys->ProgramName);
   printf("  <input type='hidden' name='db' value='%s'>\n", db->db);
   printf("  <input type='hidden' name='mode' value='adminsave'>\n");
-  if(db->password != NULL)printf("  <input type='hidden' name='password' value='%s'>\n", db->password);
+  if(db->password != NULL)printf("  <input type='hidden' name='password' value='%s'>\n", qHtmlEncode(db->password));
 
   printf("\n<!-- Table -->\n");
   printf("<table border=0 width=%s>\n", ADMIN_WIDTH);
@@ -296,7 +297,7 @@ void admin_form(SysConfig *sys, DB *db, DBConfig *conf){
   printf("<form method='post' action='%s'>\n", sys->ProgramName);
   printf("  <input type='hidden' name='db' value='%s'>\n", db->db);
   printf("  <input type='hidden' name='mode' value='batchdelete'>\n");
-  if(db->password != NULL)printf("  <input type='hidden' name='password' value='%s'>\n", db->password);
+  if(db->password != NULL)printf("  <input type='hidden' name='password' value='%s'>\n", qHtmlEncode(db->password));
 
   printf("  <tr><th bgcolor='%s'><font size=2 face='arial'>Batch-delete</font></th>\n", ENTRY_BGCOLOR);
   printf("      <td align=right>\n");
@@ -317,7 +318,7 @@ void admin_form(SysConfig *sys, DB *db, DBConfig *conf){
   printf("<form method='post' action='%s'>\n", sys->ProgramName);
   printf("  <input type='hidden' name='db' value='%s'>\n", db->db);
   printf("  <input type='hidden' name='mode' value='sync'>\n");
-  if(db->password != NULL)printf("  <input type='hidden' name='password' value='%s'>\n", db->password);
+  if(db->password != NULL)printf("  <input type='hidden' name='password' value='%s'>\n", qHtmlEncode(db->password));
 
   printf("  <tr><th bgcolor='%s'><font size=2 face='arial'>DB Reorganization</font></th>", ENTRY_BGCOLOR);
   printf("      <td align=center colspan=2>\n");
@@ -338,11 +339,11 @@ void admin_form(SysConfig *sys, DB *db, DBConfig *conf){
   }
   else { /* ÀçÁ¢¼Ó */
     if(!strcmp(conf->Language, "korean"))
-      printf("  alert('%s ÁÖÀÎ´Ô ¾î¼­¿À½Ê½Ã¿ä. ¹«¾ùÀ» µµ¿Í µå¸±±î¿ä?');\n", conf->AdminName);
+      printf("  alert('%s ÁÖÀÎ´Ô ¾î¼­¿À½Ê½Ã¿ä. ¹«¾ùÀ» µµ¿Í µå¸±±î¿ä?');\n", exchangeQuot(strdup(conf->AdminName)));
     else if(!strcmp(conf->Language, "japanese"))
-      printf("  alert('%s ƒ}ƒXƒ^A‚æ‚¤‚±‚»I‰½‚ð‚¨•‚¯‚Ü‚·‚©H?');\n", conf->AdminName);
+      printf("  alert('%s ƒ}ƒXƒ^A‚æ‚¤‚±‚»I‰½‚ð‚¨•‚¯‚Ü‚·‚©H?');\n", exchangeQuot(strdup(conf->AdminName)));
     else
-      printf("  alert('Thank you for your visiting my forever master %s. How about your condition.');\n", conf->AdminName);
+      printf("  alert('Thank you for your visiting my forever master %s. How about your condition.');\n", exchangeQuot(strdup(conf->AdminName)));
   }
   printf("</script>\n");
 
@@ -354,7 +355,34 @@ void cwb_adminsave(SysConfig *sys, DB *db, DBConfig *conf){
   int pass;
   char buf[0xFF];
 
-  pass = check_password(sys, db, conf);  
+  pass = check_password(sys, db, conf);
+
+  if(qValue("cPassword") == NULL || qValue("cPassword2") == NULL || qValue("cAdminName") == NULL || qValue("cAdminEmail") == NULL) qError("Only reserved query can be accepted.");
+
+  /* these values are printed into HTML without escaping (security) */
+  {
+    static char *keys[] = {"cFontSize", "cTableWidth", "cCharSet", "cArticlesPerPage", "cListBorderSize",
+                           "cListTitleFontColor", "cListTitleBgColor", "cListArticleFontColor", "cListArticleBgColor",
+                           "cReadLineHeight", "cReadTitleBorderSize", "cReadTextBorderSize",
+                           "cReadTitleFontColor", "cReadTitleBgColor", "cReadTextFontColor", "cReadTextBgColor",
+                           "cWriteTitleFontColor", "cWriteTitleBgColor", "cHomeTarget", "cBackTarget", "cLinkTarget", NULL};
+    char *value, *cp;
+    int  i;
+
+    for(i = 0; keys[i] != NULL; i++) {
+      if((value = qValue(keys[i])) == NULL) continue;
+      for(cp = value; *cp; cp++) {
+        if(!(isalnum((unsigned char)*cp) || *cp == '#' || *cp == '%' || *cp == '_' || *cp == '-')) qError("Invalid value in '%s'.", keys[i] + 1);
+      }
+    }
+
+    for(i = 0; i < 2; i++) {
+      value = qValue(i == 0 ? "cHomeUrl" : "cBackUrl");
+      if(value == NULL || !strcmp(value, "")) continue;
+      if(strncasecmp(value, "http://", 7) && strncasecmp(value, "https://", 8) && value[0] != '/') qError("URL must start with 'http://', 'https://' or '/'.");
+      if(strpbrk(value, "'\"<> \t\r\n") != NULL) qError("Invalid character in URL.");
+    }
+  }
 
   if(pass == PASS_NOT_DEFINE && !strcmp("", qRemoveSpace(qValue("cPassword"))))qError("You must specify the password, when you configure a db at first time.");
 
@@ -366,7 +394,7 @@ void cwb_adminsave(SysConfig *sys, DB *db, DBConfig *conf){
 
   if(qCheckEmail(qRemoveSpace(qValue("cAdminEmail"))) == 0) qError("Administrator's e-mail address is incorrect.");
 
-  sprintf(buf, "%s/%s/%s.%s", sys->RealBasePath, sys->DataDirectory, db->db, sys->DataExtension);
+  snprintf(buf, sizeof(buf), "%s/%s/%s.%s", sys->RealBasePath, sys->DataDirectory, db->db, sys->DataExtension);
   DBOpen(buf, GDBM_WRITER);
 
   if(strcmp(qValue("cPassword"), "")) DBStore("conf.Password", crypt(qValue("cPassword"), sys->CryptSalt), GDBM_REPLACE);
