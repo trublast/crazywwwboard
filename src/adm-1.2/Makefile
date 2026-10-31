@@ -45,7 +45,7 @@ reall:	clean all
 ##
 $(CGINAME): $(OBJ) 
 	$(CC) -I$(INCLUDE) $(CFLAGS) -o $(CGINAME) $(OBJ) $(LIB)
-	chmod 6755 $(CGINAME)
+	chmod 0755 $(CGINAME)
 
 ## Compile Module
 %.o:	%.c
