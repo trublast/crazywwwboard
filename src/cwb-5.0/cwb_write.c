@@ -489,6 +489,8 @@ void cwb_writesave(SysConfig *sys, DB *db, DBConfig *conf){
         snprintf(binaryPath, sizeof(binaryPath), "%s/%s/%s/%s", sys->RealBasePath, sys->DataDirectory, db->db, binaryName);
         fd = open(binaryPath, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0644);
         if(fd >= 0) {
+          /* uploaded file is never executable, whatever umask is */
+          if(fchmod(fd, 0644) != 0) qError("File creation fail.");
           fp = fdopen(fd, "wb");
           break;
         }

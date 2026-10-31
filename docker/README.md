@@ -13,7 +13,6 @@ Two-stage image:
 
 ```sh
 echo 'MyPass12' > admin_password.txt && chmod 600 admin_password.txt
-sudo mkdir -p /var/lib/crazywwwboard      # or set CWB_DATA_DIR
 docker compose up -d --build
 ```
 
@@ -32,24 +31,16 @@ it on the first visit.
 | `CWB_ADMIN_PASSWORD_FILE` / `CWB_ADMIN_PASSWORD` | none | master password of CrazyAdmin.cgi, 2-8 chars `[0-9A-Za-z]`. Without it CrazyAdmin.cgi is locked |
 | `CWB_ADMIN_ALLOW` | `all` | CIDRs allowed to open CrazyAdmin.cgi |
 | `CWB_FCGI_CHILDREN` | `4` | fcgiwrap workers |
-| `CWB_DATA_DIR` (compose) | `/var/lib/crazywwwboard` | data directory on the docker host |
 
 ## Hardening
 
 - Runs as uid 101, all capabilities dropped, `no-new-privileges`, no
   setuid/setgid file in the image, pids and memory limits.
-- Read-only root filesystem. Writable mounts, all `noexec,nosuid,nodev`:
-  - `/tmp` (tmpfs) : nginx temporary files
-  - `/run/cwb` (tmpfs) : generated configs, fcgiwrap socket
-  - `/srv/cwb-data/var` : boards, uploads, statistics, logs (persistent)
-- Docker ignores `noexec` for bind mounts, so compose mounts the data
-  directory as an overlay volume (`CWB_DATA_DIR/upper` keeps the data).
-  `cwb-init` creates the directories before the board starts.
-  The volume options are fixed when the volume is created: after changing
-  `CWB_DATA_DIR` run `docker compose down` and `docker volume rm <project>_cwb-var`.
-  Overlay needs a Linux host with the data dir on ext4/xfs/btrfs. Docker
-  Desktop can't see host paths there; use a plain named volume instead
-  (without noexec).
+- Read-only root filesystem. Writable places : `/tmp` and `/run/cwb` (tmpfs),
+  `/srv/cwb-data/var` (volume : boards, uploads, statistics, logs).
+- Uploaded files are always created as regular files with mode `0644`
+  (`O_EXCL|O_NOFOLLOW`, then `fchmod`), so they never have execute or
+  setuid/setgid bits, and they get safe names without script extensions.
 - Only the two CGIs can be executed, `SERVER_NAME` / `SERVER_PORT` are fixed
   (not taken from the `Host` header).
 - Uploads are served as passive content: images, text or

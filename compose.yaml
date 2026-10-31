@@ -3,41 +3,11 @@
 ##   docker compose up -d --build
 ##   http://localhost:8080/cgi-bin/CrazyAdmin.cgi   (create a board)
 ##   http://localhost:8080/cgi-bin/CrazyWWWBoard.cgi?db=NAME
-##
-## Data is kept in ${CWB_DATA_DIR:-/var/lib/crazywwwboard}/upper on the docker host
-## and mounted with noexec,nosuid,nodev (see docker/README.md).
-
-x-hardening: &hardening
-  read_only: true
-  cap_drop:
-    - ALL
-  security_opt:
-    - no-new-privileges:true
 
 services:
-  # prepares the data directory on the docker host, then exits
-  cwb-init:
-    <<: *hardening
-    image: crazywwwboard:latest
-    build: .
-    user: "0:0"
-    cap_add:
-      - CHOWN
-      - FOWNER
-    network_mode: none
-    entrypoint:
-      - /bin/sh
-      - -c
-      - mkdir -p /data/lower /data/upper /data/work && chmod 0750 /data/upper && chmod 0700 /data/work && chown 101:101 /data/upper
-    volumes:
-      - ${CWB_DATA_DIR:-/var/lib/crazywwwboard}:/data
-
   cwb:
-    <<: *hardening
+    build: .
     image: crazywwwboard:latest
-    depends_on:
-      cwb-init:
-        condition: service_completed_successfully
     restart: unless-stopped
     ports:
       - "8080:8080"
@@ -51,29 +21,26 @@ services:
       CWB_ADMIN_PASSWORD_FILE: /run/secrets/cwb_admin_password
     secrets:
       - cwb_admin_password
+
+    # hardening
     user: "101:101"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     pids_limit: 128
     mem_limit: 256m
     tmpfs:
-      - /tmp:rw,noexec,nosuid,nodev,size=64m,uid=101,gid=101,mode=0700
-      - /run/cwb:rw,noexec,nosuid,nodev,size=1m,uid=101,gid=101,mode=0700
+      - /tmp:size=64m,uid=101,gid=101,mode=0700
+      - /run/cwb:size=1m,uid=101,gid=101,mode=0700
     volumes:
-      # nocopy : mounted at start, after cwb-init prepared the directories
-      - type: volume
-        source: cwb-var
-        target: /srv/cwb-data/var
-        volume:
-          nocopy: true
+      # boards, uploads, statistics, logs
+      - cwb-var:/srv/cwb-data/var
 
 secrets:
   cwb_admin_password:
     file: ./admin_password.txt
 
 volumes:
-  # overlay instead of bind : docker ignores noexec on bind mounts
-  cwb-var:
-    driver: local
-    driver_opts:
-      type: overlay
-      device: overlay
-      o: "lowerdir=${CWB_DATA_DIR:-/var/lib/crazywwwboard}/lower,upperdir=${CWB_DATA_DIR:-/var/lib/crazywwwboard}/upper,workdir=${CWB_DATA_DIR:-/var/lib/crazywwwboard}/work,noexec,nosuid,nodev"
+  cwb-var: {}
