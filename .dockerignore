@@ -1,0 +1,17 @@
+.git
+.gitignore
+*.jpeg
+admin_password.txt
+compose.yaml
+Install-sh
+README
+AUTHOR
+cwb-data/icon-package
+cwb-data/data
+cwb-data/stat
+cwb-data/log
+src/**/*.o
+src/**/*.a
+src/**/*.cgi
+src/arc-1.0/CrazyArchive
+src/md5genkey-1.0/md5genkey
