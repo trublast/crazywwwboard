@@ -1,12 +1,18 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 #include "gdbm.h"
 #include "gdbm_lib.h"
 #include "qDecoder.h"
 #include "adm.h"
 #include "adm_message.h"
 #include "adm_newpass.h"
+
+static void savePassword(char *encPassword);
 
 void adm_newpass(SysConfig *sys, DB *db) {
   char *msg = "";
@@ -60,9 +66,32 @@ void adm_newpasssave(SysConfig *sys, DB *db) {
 
   if(strlen(password) < 2) qError("Password is too short.");
 
-  encPassword = crypt(password, sys->CryptSalt);
+  if(strlen(password) > MAX_PASSWORD_LEN) qError("Password is too long.");
 
-  saveMessage(PASSWORD_FILE, encPassword);
+  encPassword = crypt(password, sys->CryptSalt);
+  if(encPassword == NULL || strlen(encPassword) == 0) qError("Password encryption fail. Check CryptSalt.");
+
+  savePassword(encPassword);
 
   db->password = encPassword;
+}
+
+/* store the password hash with mode 0600 : write a new file, then rename it */
+static void savePassword(char *encPassword) {
+  char tmpPath[0xff];
+  int  fd, len;
+
+  snprintf(tmpPath, sizeof(tmpPath), "%s.%d", PASSWORD_FILE, (int)getpid());
+
+  if((fd = open(tmpPath, O_WRONLY | O_CREAT | O_EXCL, 0600)) < 0) qError("File(%s) save fail.", tmpPath);
+  len = strlen(encPassword);
+  if(fchmod(fd, 0600) != 0 || write(fd, encPassword, len) != len || close(fd) != 0) {
+    unlink(tmpPath);
+    qError("File(%s) save fail.", tmpPath);
+  }
+
+  if(rename(tmpPath, PASSWORD_FILE) != 0) {
+    unlink(tmpPath);
+    qError("File(%s) save fail.", PASSWORD_FILE);
+  }
 }

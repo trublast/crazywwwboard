@@ -40,7 +40,7 @@ reall:	clean all
 ##
 $(PRGNAME): $(OBJ) 
 	$(CC) -I$(INCLUDE) $(CFLAGS) -o $(PRGNAME) $(OBJ) $(LIB)
-	chmod 6755 $(PRGNAME)
+	chmod 0755 $(PRGNAME)
 
 ## Compile Module
 %.o:	%.c

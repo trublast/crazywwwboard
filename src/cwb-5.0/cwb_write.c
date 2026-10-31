@@ -2,6 +2,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <ctype.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <unistd.h>
 #include "gdbm.h"
 #include "gdbm_lib.h"
 #include "qDecoder.h"
@@ -25,6 +29,7 @@ char *joinText(char *txt1, char *txt2);
 int  getlines(char *string);
 int  uploadSum(char *dbpath, int lastnum);
 int  sendmail(SysConfig *sys, char *To, DBArticle *article, DB *db, DBConfig *conf);
+void safeFilename(char *name);
 
 /* write & reply */
 void cwb_write(SysConfig *sys, DB *db, DBConfig *conf){
@@ -52,7 +57,7 @@ void cwb_write(SysConfig *sys, DB *db, DBConfig *conf){
   if(db->num != 0) {  /* 관련글 쓰기 */
     char buf[0xff], *rName, *rSubject, *rText;
 
-    sprintf(buf, "%s/%s/%s.%s", sys->RealBasePath, sys->DataDirectory, db->db, sys->DataExtension);
+    snprintf(buf, sizeof(buf), "%s/%s/%s.%s", sys->RealBasePath, sys->DataDirectory, db->db, sys->DataExtension);
     DBOpen(buf, GDBM_READER);
 
     if((rName    = DBFetch ("%d.Name",    db->num)) == NULL) qError("Original article(%d) not found.", db->num);
@@ -106,7 +111,7 @@ char *replyText(char *orgtext, char *name, char *retext, char *reline) {
   char *buf, *offset;
   int  eos, textsize;
 
-  sprintf(header, "%s %s\n", name, retext);
+  snprintf(header, sizeof(header), "%s %s\n", name, retext);
 
   textsize =  strlen(header);
   textsize += strlen(orgtext);
@@ -146,7 +151,7 @@ void cwb_modify(SysConfig *sys, DB *db, DBConfig *conf){
 
   check_password(sys, db, conf);
 
-  sprintf(buf, "%s/%s/%s.%s", sys->RealBasePath, sys->DataDirectory, db->db, sys->DataExtension);
+  snprintf(buf, sizeof(buf), "%s/%s/%s.%s", sys->RealBasePath, sys->DataDirectory, db->db, sys->DataExtension);
   DBOpen(buf, GDBM_READER);
 
   if((reply.Name     = DBFetch("%d.Name",     db->num)) == NULL) qError("Original article(%d) not found.", db->num);
@@ -236,7 +241,7 @@ void write_form(SysConfig *sys, DB *db, DBConfig *conf, Reply *reply){
   if(atoi(sys->UploadSoftLimit) > 0 || atoi(sys->UploadHardLimit) > 0){
     char dbpath[0xff];
 
-    sprintf(dbpath, "%s/%s/%s.%s", sys->RealBasePath, sys->DataDirectory, db->db, sys->DataExtension);
+    snprintf(dbpath, sizeof(dbpath), "%s/%s/%s.%s", sys->RealBasePath, sys->DataDirectory, db->db, sys->DataExtension);
     uploadSize = uploadSum(dbpath, conf->LastNum) / 1024;
 
     /* Soft 업로딩 제한 초과 */
@@ -274,8 +279,8 @@ void write_form(SysConfig *sys, DB *db, DBConfig *conf, Reply *reply){
   printf("  <input type=hidden name='page'     value='%d'>\n", db->page);
   printf("  <input type=hidden name='category' value='%s'>\n", db->category);
   printf("  <input type=hidden name='ftype'    value='%d'>\n", db->ftype);
-  printf("  <input type=hidden name='fval'     value='%s'>\n", db->fval);
-  if(db->password != NULL) printf("  <input type=hidden name='password' value='%s'>\n", db->password);
+  printf("  <input type=hidden name='fval'     value='%s'>\n", qHtmlEncode(db->fval));
+  if(db->password != NULL) printf("  <input type=hidden name='password' value='%s'>\n", qHtmlEncode(db->password));
 
 
   printf("\n<!-- Table -->\n");
@@ -388,7 +393,7 @@ void cwb_writesave(SysConfig *sys, DB *db, DBConfig *conf){
   DBArticle article;
   Cgienv env;
 
-  char buf[0xff], date[14+1];
+  char buf[0xff], date[14+1], binaryName[0xff]; /* binaryName is referred by article.Filename */
   char *attachText, *o_poster;
   int  dataExist = FALSE;
 
@@ -407,7 +412,7 @@ void cwb_writesave(SysConfig *sys, DB *db, DBConfig *conf){
   if((article.Filename = qValue("pAttachFile.filename")) == NULL) article.Filename = "";
   if((article.Filesize = qValue("pAttachFile.length")) == NULL)   article.Filesize = "";
 
-  sprintf(date, "%04d%02d%02d%02d%02d%02d", env.year, env.mon, env.day, env.hour, env.min, env.sec);
+  snprintf(date, sizeof(date), "%04d%02d%02d%02d%02d%02d", env.year, env.mon, env.day, env.hour, env.min, env.sec);
   article.Date   = date;
   if(!strcmp(conf->DisplayAddress, "true")) article.Domain = env.remote_host;
   else article.Domain = "";
@@ -421,6 +426,12 @@ void cwb_writesave(SysConfig *sys, DB *db, DBConfig *conf){
     if(qCheckEmail(article.Email) == 0) qError("The E-mail address(%s) is incorrect.", article.Email);
   }
   if(!strcmp(article.Subject,  ""))     qError("The subject field must be specified.");
+  if(strlen(article.Name)    > 64)  qError("The name field is too long.");
+  if(strlen(article.Email)   > 64)  qError("The E-mail field is too long.");
+  if(strlen(article.Subject) > 200) qError("The subject field is too long.");
+  if(strlen(article.Category) > 32 || qStr09AZaz(article.Category) == 0) qError("Invalid category.");
+  /* CR, LF in name or subject may inject e-mail headers */
+  removeCtrl(article.Name), removeCtrl(article.Subject);
   if(strcmp(article.Password,  "") != 0) article.Password = crypt(article.Password, sys->CryptSalt);
 
   if(strlen(article.Text) > 0) dataExist = TRUE;
@@ -438,17 +449,26 @@ void cwb_writesave(SysConfig *sys, DB *db, DBConfig *conf){
 
     if((fileLength = atoi(article.Filesize)) > 0) { /* upload가 되었다 */
       FILE *fp;
-      char *binaryp, binaryName[0xff], binaryPath[0xff];
+      char *binaryp, binaryPath[0xff];
       int  i;
 
       dataExist = TRUE;
+
+      /* the form hides the upload field, but a crafted request must be refused too (security) */
+      if(strcmp(conf->UploadEnable, "true") || strcmp(sys->AllowUpload, "true")) qError("File uploading is disabled.");
+      if(atoi(sys->UploadSoftLimit) > 0 || atoi(sys->UploadHardLimit) > 0) {
+        char dbpath[0xff];
+
+        snprintf(dbpath, sizeof(dbpath), "%s/%s/%s.%s", sys->RealBasePath, sys->DataDirectory, db->db, sys->DataExtension);
+        if(atoi(sys->UploadSoftLimit) < uploadSum(dbpath, conf->LastNum) / 1024) qError("Uploading is locked until downsizing under %d Kbytes.", atoi(sys->UploadSoftLimit));
+      }
 
       /* Hard 업로딩 제한 검사 */
       if(atoi(sys->UploadHardLimit) > 0) {
         char dbpath[0xff];
         int uploadSize, usedSpace, requestedSpace;
 
-        sprintf(dbpath, "%s/%s/%s.%s", sys->RealBasePath, sys->DataDirectory, db->db, sys->DataExtension);
+        snprintf(dbpath, sizeof(dbpath), "%s/%s/%s.%s", sys->RealBasePath, sys->DataDirectory, db->db, sys->DataExtension);
         usedSpace = uploadSum(dbpath, conf->LastNum) / 1024;
         requestedSpace = fileLength / 1024;
         uploadSize = usedSpace + requestedSpace;
@@ -458,37 +478,38 @@ void cwb_writesave(SysConfig *sys, DB *db, DBConfig *conf){
       }
 
       /* filename중 ' '이 있으면 '_'로 바꾼다. */
-      for(i = 0; article.Filename[i] != '\0'; i++) {
-        if(article.Filename[i] == ' ') article.Filename[i] = '_';
-      }
+      safeFilename(article.Filename);
 
-      /* 디렉토리 존재 검사 */
-      sprintf(binaryPath, "%s/%s/%s", sys->RealBasePath, sys->DataDirectory, db->db);
-      if(qCheckFile(binaryPath) == 0) { /* 업로드용 디렉토리 생성 */
+      /* upload directory */
+      snprintf(binaryPath, sizeof(binaryPath), "%s/%s/%s", sys->RealBasePath, sys->DataDirectory, db->db);
+      if(qCheckFile(binaryPath) == 0) {
         if(mkdir(binaryPath, S_IRUSR | S_IWUSR | S_IXUSR | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH) != 0) {
-          qError("Upload directory(%s) creation fail. Please check the permissions.", binaryPath);
+          qError("Upload directory creation fail. Please check the permissions.");
         }
       }
 
-      /* 동일파일 검사 */
-      sprintf(binaryPath, "%s/%s/%s/%s", sys->RealBasePath, sys->DataDirectory, db->db, article.Filename);
-      if(qCheckFile(binaryPath) == 1) { /* 동일파일이 존재하면, 초기 sequencial number = 2 */
-        for(i = 1; ; i++) {
-          sprintf(binaryPath, "%s/%s/%s/%d-%s", sys->RealBasePath, sys->DataDirectory, db->db, i, article.Filename);
-          if(qCheckFile(binaryPath) == 0) { /* 동일파일 없음 */
-            /* 새로운 파일명을 만듬 */
-            sprintf(binaryName, "%d-%s", i, article.Filename);
-            article.Filename = binaryName;
-            break;
-          }
-        }
-      }
-
-      /* 저장 */
+      /* never overwrite or follow symlink, if the file exists then use 'N-filename' */
       binaryp = qValue("pAttachFile");
-      fp = fopen(binaryPath, "wb");
-      if(fp == NULL) qError("File creation(%s) fail.", binaryPath);
-      for(i = 0; i < fileLength; i++) fprintf(fp, "%c", binaryp[i]);
+      if(binaryp == NULL) qError("Only reserved query can be accepted.");
+      snprintf(binaryName, sizeof(binaryName), "%s", article.Filename);
+      for(i = 1, fp = NULL; ; i++) {
+        int fd;
+
+        snprintf(binaryPath, sizeof(binaryPath), "%s/%s/%s/%s", sys->RealBasePath, sys->DataDirectory, db->db, binaryName);
+        fd = open(binaryPath, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0644);
+        if(fd >= 0) {
+          /* uploaded file is never executable, whatever umask is */
+          if(fchmod(fd, 0644) != 0) qError("File creation fail.");
+          fp = fdopen(fd, "wb");
+          break;
+        }
+        if(errno != EEXIST || i > 1000) qError("File creation fail.");
+        snprintf(binaryName, sizeof(binaryName), "%d-%s", i, article.Filename);
+      }
+      article.Filename = binaryName;
+
+      if(fp == NULL) qError("File creation fail.");
+      if(fwrite(binaryp, 1, fileLength, fp) != (size_t)fileLength) qError("File writing fail.");
       fclose(fp);
     }
   }
@@ -496,15 +517,15 @@ void cwb_writesave(SysConfig *sys, DB *db, DBConfig *conf){
   if(dataExist == FALSE) qError("There are no datas to post.");
 
   /* Insert into DB */
-  sprintf(buf, "%s/%s/%s.%s", sys->RealBasePath, sys->DataDirectory, db->db, sys->DataExtension);
+  snprintf(buf, sizeof(buf), "%s/%s/%s.%s", sys->RealBasePath, sys->DataDirectory, db->db, sys->DataExtension);
   DBOpen(buf, GDBM_WRITER);
 
   /* DB의 단일접근이 보장되었다, 마지막 게시물 번호를 다시 가져온다 */
   conf->LastNum = DBiFetch("conf.LastNum");
   article.Num = ++conf->LastNum;
 
-#define StoreStr(NAME) { sprintf(buf, "%d." #NAME, article.Num); DBStore(buf, article.NAME, GDBM_REPLACE); }
-#define StoreInt(NAME) { sprintf(buf, "%d." #NAME, article.Num); DBiStore(buf, article.NAME, GDBM_REPLACE); }
+#define StoreStr(NAME) { snprintf(buf, sizeof(buf), "%d." #NAME, article.Num); DBStore(buf, article.NAME, GDBM_REPLACE); }
+#define StoreInt(NAME) { snprintf(buf, sizeof(buf), "%d." #NAME, article.Num); DBiStore(buf, article.NAME, GDBM_REPLACE); }
 
   StoreStr(Name);
   StoreStr(Email);
@@ -571,6 +592,12 @@ void cwb_modifysave(SysConfig *sys, DB *db, DBConfig *conf){
     if(qCheckEmail(article.Email) == 0) qError("The E-mail(%s) address is incorrect.", article.Email);
   }
   if(!strcmp(article.Subject,  ""))     qError("The subject field must be specified.");
+  if(strlen(article.Name)    > 64)  qError("The name field is too long.");
+  if(strlen(article.Email)   > 64)  qError("The E-mail field is too long.");
+  if(strlen(article.Subject) > 200) qError("The subject field is too long.");
+  if(strlen(article.Category) > 32 || qStr09AZaz(article.Category) == 0) qError("Invalid category.");
+  /* CR, LF in name or subject may inject e-mail headers */
+  removeCtrl(article.Name), removeCtrl(article.Subject);
 
   if(strlen(article.Text) > 0) dataExist = TRUE;
 
@@ -584,14 +611,14 @@ void cwb_modifysave(SysConfig *sys, DB *db, DBConfig *conf){
   if(dataExist == FALSE) qError("There is no data to post.");
 
   /* Modify DB */
-  sprintf(buf, "%s/%s/%s.%s", sys->RealBasePath, sys->DataDirectory, db->db, sys->DataExtension);
+  snprintf(buf, sizeof(buf), "%s/%s/%s.%s", sys->RealBasePath, sys->DataDirectory, db->db, sys->DataExtension);
   DBOpen(buf, GDBM_WRITER);
 
   /* 게시물이 존재하는지 확인한다 */
   if(!DBIsKeyExist("%d.Name", db->num)) qError("There is no article to modify in the database.");
 
-#define StoreStr2(NAME) { sprintf(buf, "%d." #NAME, db->num); DBStore(buf, article.NAME, GDBM_REPLACE); }
-#define StoreInt2(NAME) { sprintf(buf, "%d." #NAME, db->num); DBiStore(buf, article.NAME, GDBM_REPLACE); }
+#define StoreStr2(NAME) { snprintf(buf, sizeof(buf), "%d." #NAME, db->num); DBStore(buf, article.NAME, GDBM_REPLACE); }
+#define StoreInt2(NAME) { snprintf(buf, sizeof(buf), "%d." #NAME, db->num); DBiStore(buf, article.NAME, GDBM_REPLACE); }
 
   StoreStr2(Name);
   StoreStr2(Email);
@@ -668,11 +695,11 @@ int sendmail(SysConfig *sys, char *To, DBArticle *article, DB *db, DBConfig *con
 
   qCgienv(&env);
 
-  if(!strcmp(env.server_port, "80")) sprintf(server_domain, "%s", env.server_name);
-  else sprintf(server_domain, "%s:%s", env.server_name, env.server_port);
+  if(!strcmp(env.server_port, "80")) snprintf(server_domain, sizeof(server_domain), "%s", env.server_name);
+  else snprintf(server_domain, sizeof(server_domain), "%s:%s", env.server_name, env.server_port);
 
   /* Make sendmail path */
-  sprintf(smail, "%s %s", sys->Sendmail, sys->SendmailOptions);
+  snprintf(smail, sizeof(smail), "%s %s", sys->Sendmail, sys->SendmailOptions);
 
   /* 사용자가 AdminEmail을 잘못된 Local Email로 지정하였을 경우에 
      "No recipient addresses found." 와 같은 오류 메시지를 sendmail은 
@@ -685,11 +712,11 @@ int sendmail(SysConfig *sys, char *To, DBArticle *article, DB *db, DBConfig *con
     fprintf(fp, "Subject: New article is posted\n");
   }
   else {
-    fprintf(fp, "Subject: %s\n", article->Subject);
+    fprintf(fp, "Subject: %s\n", removeCtrl(article->Subject));
   }
 
   fprintf(fp, "From: \"%s (%s:%d)\" <%s>\n",   sys->MailName, db->db, article->Num, conf->AdminEmail);
-  fprintf(fp, "Reply-To: \"%s\" <%s>\n", exchangeQuot(article->Name), article->Email);
+  fprintf(fp, "Reply-To: \"%s\" <%s>\n", exchangeQuot(article->Name), removeCtrl(article->Email));
   fprintf(fp, "To: %s\n",              To);
   fprintf(fp, "Organization: %s\n",    sys->MailOrganization);
   fprintf(fp, "X-Mailer: %s %s (%s)\n", OFFICIAL_PROGRAM_NAME, OFFICIAL_PROGRAM_VERSION, PLATFORM);
@@ -700,7 +727,7 @@ int sendmail(SysConfig *sys, char *To, DBArticle *article, DB *db, DBConfig *con
     FILE *dp;
     char buf[0xff];
 
-    sprintf(buf, "%s/%s", sys->RealBasePath, sys->MailHead);
+    snprintf(buf, sizeof(buf), "%s/%s", sys->RealBasePath, sys->MailHead);
     dp = fopen(buf, "rt");
     if(dp != NULL) {
       int c;
@@ -752,7 +779,7 @@ int sendmail(SysConfig *sys, char *To, DBArticle *article, DB *db, DBConfig *con
     FILE *dp;
     char buf[0xff];
 
-    sprintf(buf, "%s/%s", sys->RealBasePath, sys->MailTail);
+    snprintf(buf, sizeof(buf), "%s/%s", sys->RealBasePath, sys->MailTail);
     dp = fopen(buf, "rt");
     if(dp != NULL) {
       int c;
@@ -770,4 +797,41 @@ int sendmail(SysConfig *sys, char *To, DBArticle *article, DB *db, DBConfig *con
 
   pclose(fp);
   return TRUE;
+}
+
+/* Make uploaded filename safe (security)
+   only [A-Za-z0-9_-.], only the last '.' remains and script-like extension is disabled */
+void safeFilename(char *name) {
+  static char *deny[] = {"php", "php3", "php4", "php5", "php7", "phtml", "pht", "phar", "inc",
+                         "cgi", "fcgi", "pl", "pm", "py", "rb", "sh", "asp", "aspx", "jsp",
+                         "shtml", "shtm", "stm", "htm", "html", "xhtml", "svg", "xml", "js",
+                         "htaccess", "htpasswd", NULL};
+  char *dot, *cp;
+  int  i, len;
+
+  /* keep the tail when too long, it has the extension */
+  len = strlen(name);
+  if(len > 64) memmove(name, name + len - 64, 64 + 1);
+
+  for(cp = name; *cp; cp++) {
+    if(!(isalnum((unsigned char)*cp) || *cp == '-' || *cp == '_' || *cp == '.')) *cp = '_';
+  }
+
+  /* 'a.php.jpg' may be executed by some web servers */
+  dot = strrchr(name, '.');
+  for(cp = name; *cp; cp++) {
+    if(*cp == '.' && cp != dot) *cp = '_';
+  }
+
+  if(dot != NULL) {
+    for(i = 0; deny[i] != NULL; i++) {
+      if(!strcasecmp(dot + 1, deny[i])) {
+        *dot = '_';
+        break;
+      }
+    }
+  }
+
+  /* no hidden file */
+  if(name[0] == '.') name[0] = '_';
 }

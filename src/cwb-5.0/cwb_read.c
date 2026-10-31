@@ -75,7 +75,7 @@ void cwb_read(Entry *sysp, SysConfig *sys, DB *db, DBConfig *conf){
   }
 
   /* DB가 저장된 실제 디렉토리 경로를 저장한다 */
-  sprintf(dbpath, "%s/%s/%s.%s", sys->RealBasePath, sys->DataDirectory, db->db, sys->DataExtension);
+  snprintf(dbpath, sizeof(dbpath), "%s/%s/%s.%s", sys->RealBasePath, sys->DataDirectory, db->db, sys->DataExtension);
 
   /* 게시물을 가져온다 */
   if(getArticle(dbpath, db->num, &article) == FALSE){
@@ -112,10 +112,10 @@ void cwb_read(Entry *sysp, SysConfig *sys, DB *db, DBConfig *conf){
     printf("<table border=0 width=%s>\n", conf->TableWidth);
     /* Name */
     printf("    <td align=left>\n");
-    strcpy(buf, article.Name); /* highlightStr()에서 스트링을 변형하기 때문에 이름을 보존한다 */
+    snprintf(buf, sizeof(buf), "%s", article.Name); /* highlightStr()에서 스트링을 변형하기 때문에 이름을 보존한다 */
     printf("      <font size='%s'>%s ", conf->FontSize, Written); highlightStr(1, article.Name, db->fval); printf("</font>\n");
     if(strcmp(article.Email, "") != 0){  /* Email 이 존재하면 */
-      sprintf(status_msg, "Send mail to %s (%s)", buf, article.Email);
+      snprintf(status_msg, sizeof(status_msg), "Send mail to %s (%s)", buf, article.Email);
       printf("      <font size='%s' face='Arial'>(<a href='mailto:\"%s\" <%s>' onMouseOver=\"window.status=('%s'); return true;\">%s</a>)</font>\n", conf->FontSize, buf, article.Email, status_msg, article.Email);
     }
     printf("    </td>\n");
@@ -148,10 +148,10 @@ void cwb_read(Entry *sysp, SysConfig *sys, DB *db, DBConfig *conf){
       int  filetype;
 
       filetype = findExtIcon(sysp, sys, article.Filename, fileicon);
-      sprintf(filepath, "%s/%s/%s/%s", sys->HtmlBasePath, sys->DataDirectory, db->db, article.Filename);
+      snprintf(filepath, sizeof(filepath), "%s/%s/%s/%s", sys->HtmlBasePath, sys->DataDirectory, db->db, article.Filename);
 
       printf("\n<!-- Download -->\n");
-      sprintf(status_msg, "Download %s (%d Kbytes)", article.Filename, atoi(article.Filesize) / 1024);
+      snprintf(status_msg, sizeof(status_msg), "Download %s (%d Kbytes)", article.Filename, atoi(article.Filesize) / 1024);
       printf("<table cellspacing=1 border='%s' width=%s><tr bgcolor='%s'><td>\n", conf->ReadTextBorderSize, conf->TableWidth, conf->ReadTextBgColor);
       printf("  <font size='%s' color='%s'>\n", conf->FontSize, conf->ReadTextFontColor);
       printf("  <img src='%s' width=%s height=%s border=0> %s : \n", fileicon, sys->IconWidth, sys->IconHeight, Download);
@@ -165,13 +165,14 @@ void cwb_read(Entry *sysp, SysConfig *sys, DB *db, DBConfig *conf){
       switch(filetype) {
         case TYPE_TEXT : {
           char pfilepath[0xff];
-          sprintf(pfilepath, "%s/%s/%s/%s", sys->RealBasePath, sys->DataDirectory, db->db, article.Filename);
+          snprintf(pfilepath, sizeof(pfilepath), "%s/%s/%s/%s", sys->RealBasePath, sys->DataDirectory, db->db, article.Filename);
 
           printf("  <font size='%s' color='%s'>\n", conf->FontSize, conf->ReadTextFontColor);
           printf("  <hr size=1 noshade width=250 align=left>\n");
 
           printf("<!---------- Cut here ---------->\n");
-          previewFile(pfilepath, atoi(sys->PreviewLines), filter);
+          /* uploaded files are never shown as HTML (security) */
+          previewFile(pfilepath, atoi(sys->PreviewLines), filter == 10 ? (strcmp(conf->LinkTarget, "") ? 13 : 12) : filter);
           printf("\n<!---------- Cut here ---------->\n");
 
           printf("  </font>\n");
@@ -211,7 +212,12 @@ void cwb_read(Entry *sysp, SysConfig *sys, DB *db, DBConfig *conf){
         printf("</b></font></center>\n");
       }
       else { /* 라이센스가 정확하거나, 유효기간이 안지났을 경유 */
-        highlightStr(filter, article.Text, db->fval);
+        if(filter == 10) { /* HTML mode : only whitelisted HTML (security) */
+          char *safe = safeHtml(article.Text);
+          highlightStr(filter, safe, db->fval);
+          free(safe);
+        }
+        else highlightStr(filter, article.Text, db->fval);
       }
 
       printf("\n<!---------- Cut here ---------->\n");
@@ -227,7 +233,7 @@ void cwb_read(Entry *sysp, SysConfig *sys, DB *db, DBConfig *conf){
     if(updn.upNum != 0) {
       char *tmp;
       tmp = strdup(updn.upSubject);
-      sprintf(status_msg, "Previous article : %s", exchangeQuot(tmp));
+      snprintf(status_msg, sizeof(status_msg), "Previous article : %s", exchangeQuot(tmp));
       printf("    %s : <a href='%s?db=%s&mode=read&num=%d&page=%d&category=%s&ftype=%d&fval=%s&backdepth=%d' onMouseOver=\"window.status=('%s'); return true;\">", Prev, sys->ProgramName, db->db, updn.upNum, db->page, db->category, db->ftype, db->fencval, db->backdepth + 1, status_msg);
       highlightStr(11, tmp, db->fval);
       printf("</a><br>\n");
@@ -237,7 +243,7 @@ void cwb_read(Entry *sysp, SysConfig *sys, DB *db, DBConfig *conf){
     if(updn.dnNum != 0) {
       char *tmp;
       tmp = strdup(updn.dnSubject);
-      sprintf(status_msg, "Next article : %s", exchangeQuot(tmp));
+      snprintf(status_msg, sizeof(status_msg), "Next article : %s", exchangeQuot(tmp));
       printf("    %s : <a href='%s?db=%s&mode=read&num=%d&page=%d&category=%s&ftype=%d&fval=%s&backdepth=%d' onMouseOver=\"window.status=('%s'); return true;\">", Next, sys->ProgramName, db->db, updn.dnNum, db->page, db->category, db->ftype, db->fencval, db->backdepth + 1, status_msg);
       highlightStr(11, tmp, db->fval);
       printf("</a><br>\n");
@@ -249,7 +255,7 @@ void cwb_read(Entry *sysp, SysConfig *sys, DB *db, DBConfig *conf){
     printf("  <td align=right><font size='%s' face='Arial'>", conf->FontSize);
     if(!strcmp(conf->Language, "english")) printf("%s %d, %04d (%02d:%02d)", month[article.Mon], article.Day, article.Year, article.Hour, article.Min);
     else printf("%04d/%02d/%02d (%02d:%02d)", article.Year, article.Mon, article.Day, article.Hour, article.Min);
-    if(!strcmp(conf->DisplayAddress, "true")) printf(" from %s", article.Domain);
+    if(!strcmp(conf->DisplayAddress, "true")) printf(" from %s", qHtmlEncode(article.Domain));
     printf("<br><font size='%d' face='Arial' color='gray'><b>%s %s</b></font>\n", atoi(conf->FontSize) - 1, OFFICIAL_PROGRAM_NAME, OFFICIAL_PROGRAM_VERSION);
     printf("</td>\n");
 
@@ -289,32 +295,32 @@ void readIconLink(SysConfig *sys, DB *db, DBConfig *conf, UpDnInfo *updn) {
   printf("<table border=0 width=%s><tr>\n", conf->TableWidth);
   printf("  <td align=left>\n");
   /* Modify */
-  strcpy(status_msg, "Modify this article");
+  snprintf(status_msg, sizeof(status_msg), "%s", "Modify this article");
   printf("    <a href='%s?db=%s&mode=modify&num=%d&page=%d&category=%s&ftype=%d&fval=%s&backdepth=%d' onMouseOver=\"window.status=('%s'); return true;\"><img src='%s/%s' border=0 alt='Modify'></a>\n", sys->ProgramName, db->db, db->num, db->page, db->category, db->ftype, db->fencval, db->backdepth + 1, status_msg, sys->HtmlBasePath, sys->IconModify);
   /* Delete */
-  strcpy(status_msg, "Delete this article");
+  snprintf(status_msg, sizeof(status_msg), "%s", "Delete this article");
   printf("    <a href='%s?db=%s&mode=delete&num=%d&page=%d&category=%s&ftype=%d&fval=%s&backdepth=%d' onMouseOver=\"window.status=('%s'); return true;\"><img src='%s/%s' border=0 alt='Delete'></a>\n", sys->ProgramName, db->db, db->num, db->page, db->category, db->ftype, db->fencval, db->backdepth + 1, status_msg, sys->HtmlBasePath, sys->IconDelete);
   /* Write */
-  strcpy(status_msg, "Write a new message");
+  snprintf(status_msg, sizeof(status_msg), "%s", "Write a new message");
   printf("    <a href='%s?db=%s&mode=write&category=%s&backdepth=%d' onMouseOver=\"window.status=('%s'); return true;\"><img src='%s/%s' border=0 alt='Post'></a>\n", sys->ProgramName, db->db, db->category, db->backdepth + 1, status_msg, sys->HtmlBasePath, sys->IconWrite);
   /* Reply */
-  strcpy(status_msg, "Reply to this article");
+  snprintf(status_msg, sizeof(status_msg), "%s", "Reply to this article");
   printf("    <a href='%s?db=%s&mode=reply&num=%d&page=%d&category=%s&ftype=%d&fval=%s&backdepth=%d' onMouseOver=\"window.status=('%s'); return true;\"><img src='%s/%s' border=0 alt='Reply'></a>\n", sys->ProgramName, db->db, db->num, replyPage, db->category, replyFtype, db->fencval, db->backdepth + 1, status_msg, sys->HtmlBasePath, sys->IconReply);
   printf("  </td>\n");
 
   printf("  <td align=right>\n");
   /* Up */
   if(updn->upNum != 0) {
-    sprintf(status_msg, "Previous article : %s", exchangeQuot(updn->upSubject));
+    snprintf(status_msg, sizeof(status_msg), "Previous article : %s", exchangeQuot(updn->upSubject));
     printf("    <a href='%s?db=%s&mode=read&num=%d&page=%d&category=%s&ftype=%d&fval=%s&backdepth=%d' onMouseOver=\"window.status=('%s'); return true;\"><img src='%s/%s' border=0 alt='Backward'></a>\n", sys->ProgramName, db->db, updn->upNum, db->page, db->category, db->ftype, db->fencval, db->backdepth + 1, status_msg, sys->HtmlBasePath, sys->IconUp);
   }
   /* Down */
   if(updn->dnNum != 0) {
-    sprintf(status_msg, "Next article : %s", exchangeQuot(updn->dnSubject));
+    snprintf(status_msg, sizeof(status_msg), "Next article : %s", exchangeQuot(updn->dnSubject));
     printf("    <a href='%s?db=%s&mode=read&num=%d&page=%d&category=%s&ftype=%d&fval=%s&backdepth=%d' onMouseOver=\"window.status=('%s'); return true;\"><img src='%s/%s' border=0 alt='Forward'></a>\n",  sys->ProgramName, db->db, updn->dnNum, db->page, db->category, db->ftype, db->fencval, db->backdepth + 1, status_msg, sys->HtmlBasePath, sys->IconDown);
   }
   /* List */
-  strcpy(status_msg, "Back to the list");
+  snprintf(status_msg, sizeof(status_msg), "%s", "Back to the list");
   if(db->backdepth == 0) { /* 사용자가 수동적으로 들어왔다. */
     printf("    <a href='%s?db=%s' onMouseOver=\"window.status=('%s'); return true;\"><img src='%s/%s' border=0 alt='List'></a>\n", sys->ProgramName, db->db, status_msg, sys->HtmlBasePath, sys->IconList);
   }
@@ -351,12 +357,14 @@ int getArticle(char *dbpath, int num, DBArticle *article) {
 
   /* Access Update */
   article->Access++;
-  sprintf(buf, "%d.Access", num);
+  snprintf(buf, sizeof(buf), "%d.Access", num);
   DBiStore(buf, article->Access, GDBM_REPLACE);
 
   DBClose();
 
   exchangeQuot(article->Name);
+  exchangeQuot(article->Email);
+  exchangeQuot(article->Filename);
 
   /* Adjust Empty Field */
   if(!strcmp(article->Name, "")) {
@@ -401,6 +409,7 @@ int previewFile(char *filename, int lines, int filter) {
     if(fgets(buf, sizeof(buf), fp) == NULL) break;
     qPuts(filter, buf);
   }
+  fclose(fp);
 
   return TRUE;
 }

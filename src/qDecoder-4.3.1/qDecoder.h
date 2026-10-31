@@ -75,6 +75,10 @@ int       qAwkNext(char array[][256]);
 void      qAwkClose(void);
 
 char      *qURLencode(char *str);
+char      *qHtmlEncode(char *str);
+char      *qHtmlEncode(char *str);
+char      *qHtmlEncode(char *str);
+char      *qHtmlEncode(char *str);
 void      qURLdecode(char *str);
 void      qContentType(char *mimetype);
 int       qPrintf(int mode, char *format, ...);

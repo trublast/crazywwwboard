@@ -12,11 +12,11 @@ void adm_create(SysConfig *sys, DB *db) {
 
   if(!strcmp(db->db, "")) qError("The string for your new database is empty. Try again.");
 
-  if(qStr09AZaz(db->db) == FALSE ) {
-    qError("Only regular expression(0-9, A-Z, a-z) is allowed for the database name.");
+  if(qStr09AZaz(db->db) == FALSE || strlen(db->db) > MAX_DBNAME_LEN) {
+    qError("Only regular expression(0-9, A-Z, a-z) up to %d characters is allowed for the database name.", MAX_DBNAME_LEN);
   }
 
-  sprintf(dbpath, "%s/%s/%s.%s", sys->RealBasePath, sys->DataDirectory, db->db, sys->DataExtension);
+  if(snprintf(dbpath, sizeof(dbpath), "%s/%s/%s.%s", sys->RealBasePath, sys->DataDirectory, db->db, sys->DataExtension) >= (int)sizeof(dbpath)) qError("Path is too long.");
 
   if(qCheckFile(dbpath) == TRUE) qError("DB(%s) already exist. Use another one, please.", db->db);
 

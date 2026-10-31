@@ -16,10 +16,11 @@ void adm_message(SysConfig *sys, DB *db) {
   char p_mailtail[0xff], *mailtail;
   char *msg = "";
 
-  sprintf(p_htmlhead, "%s/%s", sys->RealBasePath, sys->HtmlHead);
-  sprintf(p_htmltail, "%s/%s", sys->RealBasePath, sys->HtmlTail);
-  sprintf(p_mailhead, "%s/%s", sys->RealBasePath, sys->MailHead);
-  sprintf(p_mailtail, "%s/%s", sys->RealBasePath, sys->MailTail);
+  /* fixed message files from the realtime configuration only */
+  snprintf(p_htmlhead, sizeof(p_htmlhead), "%s/%s", sys->RealBasePath, sys->HtmlHead);
+  snprintf(p_htmltail, sizeof(p_htmltail), "%s/%s", sys->RealBasePath, sys->HtmlTail);
+  snprintf(p_mailhead, sizeof(p_mailhead), "%s/%s", sys->RealBasePath, sys->MailHead);
+  snprintf(p_mailtail, sizeof(p_mailtail), "%s/%s", sys->RealBasePath, sys->MailTail);
 
   htmlhead = readMessage(p_htmlhead);
   htmltail = readMessage(p_htmltail);
@@ -93,10 +94,11 @@ void adm_messagesave(SysConfig *sys, DB *db) {
   char p_mailhead[0xff], *mailhead;
   char p_mailtail[0xff], *mailtail;
 
-  sprintf(p_htmlhead, "%s/%s", sys->RealBasePath, sys->HtmlHead);
-  sprintf(p_htmltail, "%s/%s", sys->RealBasePath, sys->HtmlTail);
-  sprintf(p_mailhead, "%s/%s", sys->RealBasePath, sys->MailHead);
-  sprintf(p_mailtail, "%s/%s", sys->RealBasePath, sys->MailTail);
+  /* fixed message files from the realtime configuration only */
+  snprintf(p_htmlhead, sizeof(p_htmlhead), "%s/%s", sys->RealBasePath, sys->HtmlHead);
+  snprintf(p_htmltail, sizeof(p_htmltail), "%s/%s", sys->RealBasePath, sys->HtmlTail);
+  snprintf(p_mailhead, sizeof(p_mailhead), "%s/%s", sys->RealBasePath, sys->MailHead);
+  snprintf(p_mailtail, sizeof(p_mailtail), "%s/%s", sys->RealBasePath, sys->MailTail);
 
   htmlhead = qValue("cHtmlHead");
   htmltail = qValue("cHtmlTail");
@@ -119,16 +121,18 @@ char *readMessage(char *path) {
   struct stat buf;
   FILE *fp;
   char *tmp;
-  int  i;
+  size_t i;
 
-  if(stat(path, &buf) != 0) return NULL;
+  if(stat(path, &buf) != 0 || !S_ISREG(buf.st_mode)) return NULL;
 
-  tmp = (char *)malloc(sizeof(char) * ((int)buf.st_size + 1));
+  if((fp = fopen(path, "rt")) == NULL) return NULL;
 
-  fp = fopen(path, "rt");
-  for(i=0; i < (int)buf.st_size ; i++) {
-    tmp[i] = (char)fgetc(fp);
+  if((tmp = (char *)malloc(sizeof(char) * ((size_t)buf.st_size + 1))) == NULL) {
+    fclose(fp);
+    return NULL;
   }
+
+  i = fread(tmp, sizeof(char), (size_t)buf.st_size, fp);
   tmp[i] = '\0';
   fclose(fp);
 

@@ -56,7 +56,7 @@ void cwb_list(Entry *sysp, SysConfig *sys, DB *db, DBConfig *conf){
   if(!strcmp(conf->ListMode, "admin")) check_password(sys, db, conf);
 
   /* DB Open */
-  sprintf(buf, "%s/%s/%s.%s", sys->RealBasePath, sys->DataDirectory, db->db, sys->DataExtension);
+  snprintf(buf, sizeof(buf), "%s/%s/%s.%s", sys->RealBasePath, sys->DataDirectory, db->db, sys->DataExtension);
   DBOpen(buf, GDBM_READER);
 
   tArticle = main_index(db, conf);
@@ -88,10 +88,10 @@ void findUPDNnum(char *dbpath, DB *db, DBConfig *conf, UpDnInfo *updn) {
     }
   }
 
-  if(updn->upNum == 0) strcpy(updn->upSubject, "");
-  else strcpy(updn->upSubject, qRemoveSpace(DBFetch("%d.Subject", updn->upNum)));
-  if(updn->dnNum == 0) strcpy(updn->dnSubject, "");
-  else strcpy(updn->dnSubject, qRemoveSpace(DBFetch("%d.Subject", updn->dnNum)));
+  if(updn->upNum == 0) snprintf(updn->upSubject, sizeof(updn->upSubject), "%s", "");
+  else snprintf(updn->upSubject, sizeof(updn->upSubject), "%s", qRemoveSpace(DBFetch("%d.Subject", updn->upNum)));
+  if(updn->dnNum == 0) snprintf(updn->dnSubject, sizeof(updn->dnSubject), "%s", "");
+  else snprintf(updn->dnSubject, sizeof(updn->dnSubject), "%s", qRemoveSpace(DBFetch("%d.Subject", updn->dnNum)));
 
   DBClose();
 }
@@ -456,11 +456,11 @@ void print_index(Entry *sysp, SysConfig *sys, DB *db, DBConfig *conf, int tArtic
   printf("<table border=0 width=%s><tr>\n", conf->TableWidth);
   printf("  <td align=left>\n");
   if(strcmp(sys->HiddenAdminLink, "true") != 0) {
-    strcpy(status_msg, "Change database configurations, only administrator can access");
+    snprintf(status_msg, sizeof(status_msg), "%s", "Change database configurations, only administrator can access");
     printf("  <a href='%s?db=%s&mode=admin&backdepth=1' onMouseOver=\"window.status=('%s'); return true;\"><img src='%s/%s' border=0 alt='Administration'></a>\n", sys->ProgramName, db->db, status_msg, sys->HtmlBasePath, sys->IconAdmin);
   }
   if(strcmp(sys->HiddenStatLink, "true") && strcmp(sys->StatDirectory, "")) {
-    strcpy(status_msg, "Analysis statistics");
+    snprintf(status_msg, sizeof(status_msg), "%s", "Analysis statistics");
     printf("  <a href='%s?db=%s&mode=stat&backdepth=1' onMouseOver=\"window.status=('%s'); return true;\"><img src='%s/%s' border=0 alt='Statistics'></a>\n", sys->ProgramName, db->db, status_msg, sys->HtmlBasePath, sys->IconStat);
   }
   printf("  </td>\n");
@@ -533,7 +533,7 @@ void print_index(Entry *sysp, SysConfig *sys, DB *db, DBConfig *conf, int tArtic
       if(!strcmp(conf->FieldSubject, "cut")) printf("<nobr>");
       if(!strcmp(head.Email, "")) highlightStr(1, head.Name, db->fval);
       else {
-        sprintf(status_msg, "Send mail to %s (%s)", head.Name, head.Email);
+        snprintf(status_msg, sizeof(status_msg), "Send mail to %s (%s)", head.Name, head.Email);
         printf("<a href='mailto:\"%s\" <%s>' onMouseOver=\"window.status=('%s'); return true;\">", head.Name, head.Email, status_msg);
         printf("<font color='%s'>", conf->ListArticleFontColor);
         highlightStr(1, head.Name, db->fval);
@@ -553,7 +553,7 @@ void print_index(Entry *sysp, SysConfig *sys, DB *db, DBConfig *conf, int tArtic
           break;
         }
         default : { /* 업로딩 파일이 있음 */
-          sprintf(status_msg, "Download : %s (%d Kbytes) , Downloaded %d times", head.Filename, atoi(head.Filesize) / 1024, head.Download);
+          snprintf(status_msg, sizeof(status_msg), "Download : %s (%d Kbytes) , Downloaded %d times", head.Filename, atoi(head.Filesize) / 1024, head.Download);
           printf("<a href='%s?db=%s&mode=download&num=%d' onMouseOver=\"window.status=('%s'); return true;\"><img src='%s' width=%s height=%s border=0 alt='%s'></a>", sys->ProgramName, db->db, tIndex[i].num, status_msg, fileicon, sys->IconWidth, sys->IconHeight, status_msg);
           break;
         }
@@ -566,7 +566,7 @@ void print_index(Entry *sysp, SysConfig *sys, DB *db, DBConfig *conf, int tArtic
       printf("    <td align=center>");
       if(!strcmp(head.Filename, "")) printf("<br>");
       else {
-        sprintf(status_msg, "Download : %s (%d Kbytes) , Downloaded %d times", head.Filename, atoi(head.Filesize) / 1024, head.Download);
+        snprintf(status_msg, sizeof(status_msg), "Download : %s (%d Kbytes) , Downloaded %d times", head.Filename, atoi(head.Filesize) / 1024, head.Download);
         if(!strcmp(conf->FieldSubject, "cut")) printf("<nobr>");
         printf("<a href='%s?db=%s&mode=download&num=%d' onMouseOver=\"window.status=('%s'); return true;\">", sys->ProgramName, db->db, tIndex[i].num, status_msg);
         printf("<font size='%s' color='%s' face='Arial'>", conf->FontSize, conf->ListArticleFontColor);
@@ -602,7 +602,7 @@ void print_index(Entry *sysp, SysConfig *sys, DB *db, DBConfig *conf, int tArtic
       printf("<img src='%s/%s' width=10 height=1 alt='' border=0>", sys->HtmlBasePath, sys->IconBlank);
     }
 
-    sprintf(status_msg, "Physical number %d , Virtual number %d, Included %d lines", head.Num, virtualnum, head.Lines);
+    snprintf(status_msg, sizeof(status_msg), "Physical number %d , Virtual number %d, Included %d lines", head.Num, virtualnum, head.Lines);
     printf("<a href='%s?db=%s&mode=read&num=%d&page=%d&category=%s&ftype=%d&fval=%s&backdepth=1' onMouseOver=\"window.status=('%s'); return true;\">", sys->ProgramName, db->db, tIndex[i].num, db->page, db->category, db->ftype, db->fencval, status_msg);
     printf("<font size='%s' color='%s'>", conf->FontSize, conf->ListArticleFontColor);
     highlightStr(11, head.Subject, db->fval);
@@ -618,7 +618,7 @@ void print_index(Entry *sysp, SysConfig *sys, DB *db, DBConfig *conf, int tArtic
       if(!strcmp(conf->FieldSubject, "cut")) printf("<nobr>");
       if(!strcmp(head.Email, "")) highlightStr(1, head.Name, db->fval);
       else {
-        sprintf(status_msg, "Send mail to %s (%s)", head.Name, head.Email);
+        snprintf(status_msg, sizeof(status_msg), "Send mail to %s (%s)", head.Name, head.Email);
         printf("<a href='mailto:\"%s\" <%s>' onMouseOver=\"window.status=('%s'); return true;\">", head.Name, head.Email, status_msg);
         printf("<font color='%s'>", conf->ListArticleFontColor);
         highlightStr(1, head.Name, db->fval);
@@ -671,9 +671,9 @@ void print_index(Entry *sysp, SysConfig *sys, DB *db, DBConfig *conf, int tArtic
   printf("  <tr><td align=center><font size='%d' face='Arial'>\n", atoi(conf->FontSize) - 1 );
 
   if(startPage > 1) {
-    strcpy(status_msg, "Jump to first page");
+    snprintf(status_msg, sizeof(status_msg), "%s", "Jump to first page");
     printf("    <a href='%s?db=%s&mode=list&page=%d&category=%s&ftype=%d&fval=%s' onMouseOver=\"window.status=('%s'); return true;\">[1]</a>\n", sys->ProgramName, db->db, 1, db->category, db->ftype, db->fencval, status_msg);
-    strcpy(status_msg, "Jump to previous page");
+    snprintf(status_msg, sizeof(status_msg), "%s", "Jump to previous page");
     printf("    <a href='%s?db=%s&mode=list&page=%d&category=%s&ftype=%d&fval=%s' onMouseOver=\"window.status=('%s'); return true;\">[Prev]</a> -\n", sys->ProgramName, db->db, startPage-1, db->category, db->ftype, db->fencval, status_msg);
   }
   for(i = startPage; (i <= endPage) && (i <= pages) && (i > 0); i++) {
@@ -681,15 +681,15 @@ void print_index(Entry *sysp, SysConfig *sys, DB *db, DBConfig *conf, int tArtic
       printf("    [<font color=red>%d</font>]\n", i);
     }
     else {
-      sprintf(status_msg, "Jump to page %d", i);
+      snprintf(status_msg, sizeof(status_msg), "Jump to page %d", i);
       printf("    <a href='%s?db=%s&mode=list&page=%d&category=%s&ftype=%d&fval=%s' onMouseOver=\"window.status=('%s'); return true;\">[%d]</a>\n", sys->ProgramName, db->db, i, db->category, db->ftype, db->fencval, status_msg, i);
     }
   }
   if(endPage < pages) {
-    strcpy(status_msg, "Jump to next page");
+    snprintf(status_msg, sizeof(status_msg), "%s", "Jump to next page");
     printf("  - <a href='%s?db=%s&page=%d&category=%s&ftype=%d&fval=%s' onMouseOver=\"window.status=('%s'); return true;\">[Next]</a>\n", sys->ProgramName, db->db, endPage+1, db->category, db->ftype, db->fencval, status_msg);
     if(endPage + 1 < pages) {
-      strcpy(status_msg, "Jump to last page");
+      snprintf(status_msg, sizeof(status_msg), "%s", "Jump to last page");
       printf("    <a href='%s?db=%s&page=%d&category=%s&ftype=%d&fval=%s' onMouseOver=\"window.status=('%s'); return true;\">[%d]</a>\n", sys->ProgramName, db->db, pages, db->category, db->ftype, db->fencval, status_msg, pages);
     }
   }
@@ -729,7 +729,7 @@ void listIconLink(SysConfig *sys, DB *db, DBConfig *conf, int pages, char *searc
   }
   /* Help */
   if(strcmp(sys->HiddenHelpLink, "true") != 0) {
-    strcpy(status_msg, "Help message about this billboard");
+    snprintf(status_msg, sizeof(status_msg), "%s", "Help message about this billboard");
     printf("    <a href='%s/%s' onMouseOver=\"window.status=('%s'); return true;\"><img src='%s/%s' border=0 alt='Help'></a>\n", sys->HtmlBasePath, sys->Help, status_msg, sys->HtmlBasePath, sys->IconHelp);
   }
   printf("  </td>\n");
@@ -745,19 +745,19 @@ void listIconLink(SysConfig *sys, DB *db, DBConfig *conf, int pages, char *searc
   printf("  <td align=right>\n");
   /* Up */
   if(db->page > 1) {
-    strcpy(status_msg, "Previous page");
+    snprintf(status_msg, sizeof(status_msg), "%s", "Previous page");
     printf("    <a href='%s?db=%s&mode=list&page=%d&category=%s&ftype=%d&fval=%s' onMouseOver=\"window.status=('%s'); return true;\"><img src='%s/%s' border=0 alt='Backward'></a>\n", sys->ProgramName, db->db, db->page-1, db->category, db->ftype, db->fencval, status_msg, sys->HtmlBasePath, sys->IconUp);
   }
   /* Down */
   if(db->page < pages) {
-    strcpy(status_msg, "Next page");
+    snprintf(status_msg, sizeof(status_msg), "%s", "Next page");
     printf("    <a href='%s?db=%s&mode=list&page=%d&category=%s&ftype=%d&fval=%s' onMouseOver=\"window.status=('%s'); return true;\"><img src='%s/%s' border=0 alt='Forward'></a>\n", sys->ProgramName, db->db, db->page+1, db->category, db->ftype, db->fencval, status_msg, sys->HtmlBasePath, sys->IconDown);
   }
   /* Write */
-  strcpy(status_msg, "Write a new message");
+  snprintf(status_msg, sizeof(status_msg), "%s", "Write a new message");
   printf("    <a href='%s?db=%s&mode=write&category=%s&backdepth=1' onMouseOver=\"window.status=('%s'); return true;\"><img src='%s/%s' border=0 alt='Post'></a>\n", sys->ProgramName, db->db, db->category, status_msg, sys->HtmlBasePath, sys->IconWrite);
   /* Reload List */
-  strcpy(status_msg, "Reload list");
+  snprintf(status_msg, sizeof(status_msg), "%s", "Reload list");
   printf("    <a href='%s?db=%s' onMouseOver=\"window.status=('%s'); return true;\"><img src='%s/%s' border=0 alt='Reload'></a>\n", sys->ProgramName, db->db, status_msg, sys->HtmlBasePath, sys->IconReload);
 
   printf("  </td>\n");
@@ -815,7 +815,7 @@ void shotSearch(SysConfig *sys, DB *db, DBConfig *conf, char *boundstr){
 
 
   printf("    <td align=left>\n");
-  printf("      <font size=3><input type='text' name='fval' value='%s' size=14 maxlength=20></font>\n", db->fval);
+  printf("      <font size=3><input type='text' name='fval' value='%s' size=14 maxlength=20></font>\n", qHtmlEncode(db->fval));
   printf("      <font size=2><input type='submit' value='%s'></font>\n", Search);
   printf("    </td>\n");
   printf("  </tr>\n");
@@ -856,6 +856,8 @@ int getArticleInfo(int num, DBList *head){
 
   /* 성명란의 quot 마크를 수정한다, Javascript Error를 막기위해 */
   exchangeQuot(head->Name);
+  exchangeQuot(head->Email);
+  exchangeQuot(head->Filename);
 
   /* YYYYMMDD를 분리한다 */
   sscanf(head->Date, "%4d%2d%2d", &head->Year, &head->Mon, &head->Day);
@@ -887,7 +889,7 @@ int findExtIcon(Entry *sysp, SysConfig *sys, char *filename, char *icon) {
   int  i, finded;
 
   /* 파일명에서 확장자만을 분리함 */
-  for(strcpy(ext, filename), finded = FALSE, i = strlen(filename) - 1; i >= 0; i--) {
+  for(snprintf(ext, sizeof(ext), "%s", filename), finded = FALSE, i = strlen(ext) - 1; i >= 0; i--) {
     if((ext[i] == '.') || (finded == TRUE)) {
       finded = TRUE;
       ext[i] = ' ';
@@ -898,46 +900,46 @@ int findExtIcon(Entry *sysp, SysConfig *sys, char *filename, char *icon) {
 
   /* 파일명이 없음 */
   if(strlen(filename) == 0) {
-    sprintf(icon, "%s/%s", sys->HtmlBasePath, sys->IconTypeDefault);
+    snprintf(icon, 0xff, "%s/%s", sys->HtmlBasePath, sys->IconTypeDefault);
     return TYPE_UNLINK;
   }
 
   /* Check general binary */
-  sprintf(buf, "IconType-%s", ext);
+  snprintf(buf, sizeof(buf), "IconType-%s", ext);
   if(qfValue(sysp, buf) != NULL) {
-    sprintf(icon, "%s/%s", sys->HtmlBasePath, qfValue(sysp, buf));
+    snprintf(icon, 0xff, "%s/%s", sys->HtmlBasePath, qfValue(sysp, buf));
     return TYPE_LINK;
   }
 
   /* Check general text */
-  sprintf(buf, "IconTypeText-%s", ext);
+  snprintf(buf, sizeof(buf), "IconTypeText-%s", ext);
   if(qfValue(sysp, buf) != NULL) {
-    sprintf(icon, "%s/%s", sys->HtmlBasePath, qfValue(sysp, buf));
+    snprintf(icon, 0xff, "%s/%s", sys->HtmlBasePath, qfValue(sysp, buf));
     return TYPE_TEXT;
   }
 
   /* Check general image */
-  sprintf(buf, "IconTypeImage-%s", ext);
+  snprintf(buf, sizeof(buf), "IconTypeImage-%s", ext);
   if(qfValue(sysp, buf) != NULL) {
-    sprintf(icon, "%s/%s", sys->HtmlBasePath, qfValue(sysp, buf));
+    snprintf(icon, 0xff, "%s/%s", sys->HtmlBasePath, qfValue(sysp, buf));
     return TYPE_IMAGE;
   }
 
   /* Check general sound */
-  sprintf(buf, "IconTypeSound-%s", ext);
+  snprintf(buf, sizeof(buf), "IconTypeSound-%s", ext);
   if(qfValue(sysp, buf) != NULL) {
-    sprintf(icon, "%s/%s", sys->HtmlBasePath, qfValue(sysp, buf));
+    snprintf(icon, 0xff, "%s/%s", sys->HtmlBasePath, qfValue(sysp, buf));
     return TYPE_SOUND;
   }
 
   /* Check general movie */
-  sprintf(buf, "IconTypeMovie-%s", ext);
+  snprintf(buf, sizeof(buf), "IconTypeMovie-%s", ext);
   if(qfValue(sysp, buf) != NULL) {
-    sprintf(icon, "%s/%s", sys->HtmlBasePath, qfValue(sysp, buf));
+    snprintf(icon, 0xff, "%s/%s", sys->HtmlBasePath, qfValue(sysp, buf));
     return TYPE_MOVIE;
   }
 
-  sprintf(icon, "%s/%s", sys->HtmlBasePath, sys->IconTypeUnknown);
+  snprintf(icon, 0xff, "%s/%s", sys->HtmlBasePath, sys->IconTypeUnknown);
   return TYPE_LINK;
 }
 
@@ -969,7 +971,7 @@ void highlightStr(int mode, char *orgstr, char *orgtok) {
 
     for(i = 0; i < strlen(orgtok); str++, orgstr++, i++) buf[i] = *orgstr;
     buf[i] = '\0';
-    printf("<font color=red>%s</font>", buf);
+    printf("<font color=red>"); qPuts(mode, buf); printf("</font>");
   }
   qPuts(mode, orgstr);
 

@@ -1,0 +1,46 @@
+## CrazyWWWBoard : hardened container
+##   echo 'MyPass12' > admin_password.txt && chmod 600 admin_password.txt
+##   docker compose up -d --build
+##   http://localhost:8080/cgi-bin/CrazyAdmin.cgi   (create a board)
+##   http://localhost:8080/cgi-bin/CrazyWWWBoard.cgi?db=NAME
+
+services:
+  cwb:
+    build: .
+    image: crazywwwboard:latest
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      CWB_SERVER_NAME: localhost        # host name users see, used by license key and links
+      CWB_SERVER_PORT: "8080"           # port users see
+      CWB_ADMIN_NAME: Administrator
+      CWB_ADMIN_EMAIL: admin@example.com
+      CWB_LANG: en                      # en, kr, jp
+      CWB_ADMIN_ALLOW: all              # CIDRs allowed to open CrazyAdmin.cgi, e.g. "10.0.0.0/8 192.168.0.0/16"
+      CWB_ADMIN_PASSWORD_FILE: /run/secrets/cwb_admin_password
+    secrets:
+      - cwb_admin_password
+
+    # hardening
+    user: "101:101"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    mem_limit: 256m
+    tmpfs:
+      - /tmp:size=64m,uid=101,gid=101,mode=0700
+      - /run/cwb:size=1m,uid=101,gid=101,mode=0700
+    volumes:
+      # boards, uploads, statistics, logs
+      - cwb-var:/srv/cwb-data/var
+
+secrets:
+  cwb_admin_password:
+    file: ./admin_password.txt
+
+volumes:
+  cwb-var: {}

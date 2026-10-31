@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <string.h>
 #include "gdbm.h"
 #include "gdbm_lib.h"
 #include "qDecoder.h"
@@ -15,8 +16,8 @@ void cwb_delete(SysConfig *sys, DB *db, DBConfig *conf){
 
   check_password(sys, db, conf);
 
-  sprintf(dbPath,    "%s/%s/%s.%s", sys->RealBasePath, sys->DataDirectory, db->db, sys->DataExtension);
-  sprintf(uploadDir, "%s/%s/%s",    sys->RealBasePath, sys->DataDirectory, db->db);
+  snprintf(dbPath, sizeof(dbPath),    "%s/%s/%s.%s", sys->RealBasePath, sys->DataDirectory, db->db, sys->DataExtension);
+  snprintf(uploadDir, sizeof(uploadDir), "%s/%s/%s",    sys->RealBasePath, sys->DataDirectory, db->db);
 
   DBOpen(dbPath, GDBM_REPLACE);
 
@@ -39,8 +40,8 @@ void cwb_batchdelete(SysConfig *sys, DB *db, DBConfig *conf){
 
   if((num1 == 0 || num2 == 0) || (num1 > num2) || (num1 <= 0) || (num2 > conf->LastNum)) qError("Out of range. (1-%d available)", conf->LastNum);
 
-  sprintf(dbPath,    "%s/%s/%s.%s", sys->RealBasePath, sys->DataDirectory, db->db, sys->DataExtension);
-  sprintf(uploadDir, "%s/%s/%s",    sys->RealBasePath, sys->DataDirectory, db->db);
+  snprintf(dbPath, sizeof(dbPath),    "%s/%s/%s.%s", sys->RealBasePath, sys->DataDirectory, db->db, sys->DataExtension);
+  snprintf(uploadDir, sizeof(uploadDir), "%s/%s/%s",    sys->RealBasePath, sys->DataDirectory, db->db);
 
   headHtml(sys, conf);
 
@@ -78,7 +79,6 @@ void cwb_batchdelete(SysConfig *sys, DB *db, DBConfig *conf){
   if(!strcmp(sync, "true")) {
     DBReorganize(dbPath);
     printf("Database reorganized.\n");
-    free(sync);
   }
 
   printf("    </td>\n");
@@ -116,7 +116,7 @@ int deleteArticle(int num, char *uploadDir) {
   /* 게시물에 관련된글을 게시물의 Thread번호로 바꾼다 */
   for(i = num + 1; i <= lastNum; i++) {
     if(DBiFetch("%d.Thread", i) == num) {
-      sprintf(buf, "%d.Thread", i);
+      snprintf(buf, sizeof(buf), "%d.Thread", i);
       DBiStore(buf, newThread, GDBM_REPLACE);
     }
   }
@@ -145,8 +145,8 @@ int deleteArticle(int num, char *uploadDir) {
 
   /* 업로드 파일 삭제 */
   if(filename != NULL) {
-    if(strcmp(filename, "") != 0) {
-      sprintf(buf, "%s/%s", uploadDir, filename);
+    if(strcmp(filename, "") != 0 && strchr(filename, '/') == NULL && filename[0] != '.') {
+      snprintf(buf, sizeof(buf), "%s/%s", uploadDir, filename);
       unlink(buf);
     }
   }

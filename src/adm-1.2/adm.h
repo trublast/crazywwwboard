@@ -24,8 +24,9 @@
 
 #define LIST_WIDTH			"650"
 
-#define DEFAULT_MASTER_PASSWORD		"0000"
+/* no default master password : PASSWORD_FILE must be created by the administrator */
 #define MAX_PASSWORD_LEN			(8)
+#define MAX_DBNAME_LEN			(32)
 
 typedef struct {
   char *LicenseKey;

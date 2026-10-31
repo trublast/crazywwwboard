@@ -22,7 +22,7 @@ void cwb_sync(SysConfig *sys, DB *db, DBConfig *conf){
 
   check_password(sys, db, conf);
 
-  sprintf(buf, "%s/%s/%s.%s", sys->RealBasePath, sys->DataDirectory, db->db, sys->DataExtension);
+  snprintf(buf, sizeof(buf), "%s/%s/%s.%s", sys->RealBasePath, sys->DataDirectory, db->db, sys->DataExtension);
 
   status = DBReorganize(buf);
 

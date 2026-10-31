@@ -34,46 +34,54 @@ int main(int argc, char **argv){
   char buf[0xff], runPath[0xff];
   char sAccessLog[0xff], sErrorLog[0xff];
   int i;
+  char *relPath;
+  size_t len;
 
   if(argc != 2) qError("Usage: %s DB_NAME", OFFICIAL_GATEPRG_NAME);
   db = argv[1];
+
+  /* db name is used in file paths : only 0-9, A-Z, a-z */
+  if(!strcmp(db, "") || qStr09AZaz(db) == FALSE || strlen(db) > MAX_DBNAME_LEN) {
+    qError("Only regular expression(0-9, A-Z, a-z) up to %d characters is allowed for the database name.", MAX_DBNAME_LEN);
+  }
 
   /* Adjust umask */
   umask(S_IWGRP | S_IWOTH);
 
   /* 현재 실행 디렉토리 파악 */
-  strcpy(runPath, argv[0]);
+  if(snprintf(runPath, sizeof(runPath), "%s", argv[0]) >= (int)sizeof(runPath)) qError("Path is too long.");
   if(strstr(runPath, "/") == NULL) strcpy(runPath, ".");
   else { /* /PATH/EXE -> /PATH */
-    for(i = strlen(runPath) - 1; runPath[i] != '/' && i >= 0; i--);
+    for(i = strlen(runPath) - 1; i >= 0 && runPath[i] != '/'; i--);
     if(i < 0) strcpy(runPath, "");
     else runPath[i] = '\0';
   }
 
   /* get realtime config */
-  sprintf(buf, "%s/%s", runPath, REALTIME_CONFIG_FILE);
+  if(snprintf(buf, sizeof(buf), "%s/%s", runPath, REALTIME_CONFIG_FILE) >= (int)sizeof(buf)) qError("Path is too long.");
   sysp = getRealtimeConfig(&sys, buf);
 
   /* RealBasePath를 상대경로 지정했을때 이를 절대경로로 변경한다 */
   if(sys.RealBasePath[0] != '/') {
-    strcpy(buf, sys.RealBasePath);
-    sys.RealBasePath = (char *)malloc(strlen(runPath) + strlen("/") + strlen(buf) + 1);
-    sprintf(sys.RealBasePath, "%s/%s", runPath, buf);
+    relPath = sys.RealBasePath;
+    len = strlen(runPath) + strlen("/") + strlen(relPath) + 1;
+    if((sys.RealBasePath = (char *)malloc(len)) == NULL) qError("Memory allocation fail.");
+    snprintf(sys.RealBasePath, len, "%s/%s", runPath, relPath);
   }
 
   /* default error log on : 쿼리 패치도중 발생하는 오류를 기록하기 위해*/
   if(strcmp(sys.LogDirectory, "")) {
-    sprintf(sErrorLog,  "%s/%s/error_log",  sys.RealBasePath, sys.LogDirectory);
+    snprintf(sErrorLog, sizeof(sErrorLog), "%s/%s/error_log", sys.RealBasePath, sys.LogDirectory);
     qErrorLog(sErrorLog);
   }
 
   /* DB Check */
-  sprintf(buf, "%s/%s/%s.%s", sys.RealBasePath, sys.DataDirectory, db, sys.DataExtension);
+  if(snprintf(buf, sizeof(buf), "%s/%s/%s.%s", sys.RealBasePath, sys.DataDirectory, db, sys.DataExtension) >= (int)sizeof(buf)) qError("Path is too long.");
   if(qCheckFile(buf) == FALSE) qError("Database(%s) not found.", db);
 
   if(strcmp(sys.LogDirectory, "")) {
-    sprintf(sAccessLog, "%s/%s/access_log.%s", sys.RealBasePath, sys.LogDirectory, db);
-    sprintf(sErrorLog,  "%s/%s/error_log.%s",  sys.RealBasePath, sys.LogDirectory, db);
+    snprintf(sAccessLog, sizeof(sAccessLog), "%s/%s/access_log.%s", sys.RealBasePath, sys.LogDirectory, db);
+    snprintf(sErrorLog,  sizeof(sErrorLog),  "%s/%s/error_log.%s",  sys.RealBasePath, sys.LogDirectory, db);
     qErrorLog(sErrorLog);
     if(accessLog(sAccessLog) == FALSE) qError("Access logging(%s) fail.", sAccessLog);
   }

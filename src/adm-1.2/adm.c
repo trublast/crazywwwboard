@@ -61,8 +61,8 @@ int main(int argc, char **argv){
 
   /* log on */
   if(strcmp(sys.LogDirectory, "")) {
-    sprintf(sErrorLog,  "%s/%s/adm_error_log",  sys.RealBasePath, sys.LogDirectory);
-    sprintf(sAccessLog, "%s/%s/adm_access_log", sys.RealBasePath, sys.LogDirectory);
+    snprintf(sErrorLog,  sizeof(sErrorLog),  "%s/%s/adm_error_log",  sys.RealBasePath, sys.LogDirectory);
+    snprintf(sAccessLog, sizeof(sAccessLog), "%s/%s/adm_access_log", sys.RealBasePath, sys.LogDirectory);
     qErrorLog(sErrorLog);
     qErrorContact(sys.AdminEmail);
     if(accessLog(sAccessLog) == FALSE) qError("Access logging(%s) fail.", sAccessLog);
@@ -155,10 +155,21 @@ void  getConfig(DB *db, char *cryptSalt) {
   if( (db->db       = qValue("db"))       == NULL ) db->db       = "";
   if( (db->mode     = qValue("mode"))     == NULL ) db->mode     = "list";
 
+  /* db name is used in file paths : only 0-9, A-Z, a-z in every mode */
+  if(strcmp(db->db, "")) {
+    if(qStr09AZaz(db->db) == FALSE || strlen(db->db) > MAX_DBNAME_LEN) {
+      qError("Only regular expression(0-9, A-Z, a-z) up to %d characters is allowed for the database name.", MAX_DBNAME_LEN);
+    }
+  }
+  else if(!strcmp(db->mode, "rm_log") || !strcmp(db->mode, "rm_stat") || !strcmp(db->mode, "rm_db")) {
+    qError("Database name is empty. Do not use manually.");
+  }
+
   /* password */
   if( (db->password = qValue("password")) == NULL ) db->password = "";
   else if((strlen(db->password) > 0) && (strlen(db->password) <= MAX_PASSWORD_LEN)) {
     db->password = crypt(db->password, cryptSalt);
+    if(db->password == NULL) db->password = "";
   }
 }
 
@@ -207,6 +218,15 @@ void headHtml(SysConfig *sys) {
   printf("      return;\n");
   printf("    }\n");
   printf("\n");
+  printf("    // open child window and POST the form into it (keeps passwords out of URLs)\n");
+  printf("    function forkPost ( type , form ) {\n");
+  printf("      fork(type, 'about:blank');\n");
+  printf("      if(child == null) return;\n");
+  printf("      form.target = child.name;\n");
+  printf("      form.submit();\n");
+  printf("      return;\n");
+  printf("    }\n");
+  printf("\n");
   printf("    function term() {\n");
   printf("      if(child != null) {\n");
   printf("        if(!child.closed) child.close();\n");
@@ -230,7 +250,7 @@ void headHtml(SysConfig *sys) {
   
     uname(&info);
 
-    strcpy(script_path, qGetEnv("SCRIPT_NAME", ""));
+    snprintf(script_path, sizeof(script_path), "%s", qGetEnv("SCRIPT_NAME", ""));
     for(pt = script_path + strlen(script_path); pt >= script_path && *pt != '/'; pt--) *pt = '\0';
 
     printf("<table border=0>\n");
@@ -243,11 +263,11 @@ void headHtml(SysConfig *sys) {
     printf("<table><form method='get' action='http://register.nobreak.com/form_reg.shtml'><tr><td>\n");
     printf("  <font size=2>\n");
     printf("  <input type='hidden' name='product'  value='%s %s (%s)'>\n", OFFICIAL_PROGRAM_NAME, OFFICIAL_PROGRAM_VERSION, PLATFORM);
-    printf("  <input type='hidden' name='url'      value='http://%s:%s%s'>\n", qGetEnv("SERVER_NAME", ""), qGetEnv("SERVER_PORT", ""), script_path);
-    printf("  <input type='hidden' name='hostname' value='%s'>\n", info.nodename);
-    printf("  <input type='hidden' name='platform' value='%s %s %s'>\n", info.sysname, info.release, info.machine);
-    printf("  <input type='hidden' name='name'     value='%s'>\n", sys->AdminName);
-    printf("  <input type='hidden' name='email'    value='%s'>\n", sys->AdminEmail);
+    printf("  <input type='hidden' name='url'      value='http://%s:%s%s'>\n", qHtmlEncode(qGetEnv("SERVER_NAME", "")), qHtmlEncode(qGetEnv("SERVER_PORT", "")), qHtmlEncode(script_path));
+    printf("  <input type='hidden' name='hostname' value='%s'>\n", qHtmlEncode(info.nodename));
+    printf("  <input type='hidden' name='platform' value='%s %s %s'>\n", qHtmlEncode(info.sysname), qHtmlEncode(info.release), qHtmlEncode(info.machine));
+    printf("  <input type='hidden' name='name'     value='%s'>\n", qHtmlEncode(sys->AdminName));
+    printf("  <input type='hidden' name='email'    value='%s'>\n", qHtmlEncode(sys->AdminEmail));
     printf("  <input type='submit' value='    R E G I S T E R  (Getting LICENSE KEY)    '>\n");
     printf("  </font>\n");
     printf("</td></tr></form></table>\n");
@@ -327,9 +347,9 @@ unsigned int getPermission(char *filename) {
 int license_check(char *LicenseKey, char *SecureKey) {
   char script_path[0xff], *pt, buf[0xff];
 
-  strcpy(script_path, strdup(qGetEnv("SCRIPT_NAME", "")));
+  snprintf(script_path, sizeof(script_path), "%s", qGetEnv("SCRIPT_NAME", ""));
   for(pt = script_path + strlen(script_path); pt >= script_path && *pt != '/'; pt--) *pt = '\0';
-  sprintf(buf, "%s|http://%s:%s%s", SecureKey, qGetEnv("SERVER_NAME", ""), qGetEnv("SERVER_PORT", ""), script_path);
+  snprintf(buf, sizeof(buf), "%s|http://%s:%s%s", SecureKey, qGetEnv("SERVER_NAME", ""), qGetEnv("SERVER_PORT", ""), script_path);
 
   if(!strcmp(LicenseKey, md5_crypt(buf))) return TRUE;
   return FALSE;
@@ -343,7 +363,7 @@ void programInfo(void) {
   if(stat == TRUE) return;
   stat = TRUE;
   uname(&info);
-  sprintf(buf, "Running on %s(%s) %s, %s", info.sysname, info.nodename, info.release, info.machine);
+  snprintf(buf, sizeof(buf), "Running on %s(%s) %s, %s", info.sysname, info.nodename, info.release, info.machine);
 
   printf("<!-------------------------------------------------------------->\n");
   printf("<!-- CrazyWWWBoard Administrative Center : %10s %-5s   -->\n", OFFICIAL_ADMPRG_NAME, OFFICIAL_ADMPRG_VERSION);

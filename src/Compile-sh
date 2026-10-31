@@ -69,7 +69,8 @@ find_file() {
 check_req_system() {
 	if find_file gcc; then			# gcc found.
 		cc=$tmp
-		cflags="-Wall"
+		# hardening : stack canary and checked string functions (security)
+		cflags="-Wall -O2 -fstack-protector-strong -D_FORTIFY_SOURCE=2"
 	elif find_file cc; then			# gcc not found, but found cc.
 		cc=$tmp
 		#cflags="-Ae"			# for HP-UX cc 

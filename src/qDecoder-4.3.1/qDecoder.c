@@ -66,6 +66,24 @@ static char  *_error_log_filename = NULL;
 static FILE  *_awkfp = NULL;
 static char  _awksep = ' ';
 
+/* Upper limit of request body (security) */
+#define Q_MAX_POST	(32 * 1024 * 1024)
+
+/* Bounded strcat, always NUL-terminates (portable strlcat) */
+static void _qstrcat(char *dst, const char *src, size_t size) {
+  size_t len = strlen(dst);
+  if(len + 1 >= size) return;
+  strncat(dst, src, size - len - 1);
+}
+
+/* 'NAME.length' and 'NAME.filename' are set by the library only (security) */
+static int _reserved_name(char *name) {
+  int len = strlen(name);
+  if(len >= 7 && !strcmp(name + len - 7, ".length")) return 1;
+  if(len >= 9 && !strcmp(name + len - 9, ".filename")) return 1;
+  return 0;
+}
+
 /**********************************************
 ** Main Routines
 **********************************************/
@@ -128,6 +146,7 @@ int _parse_urlencoded(void){
 
       qURLdecode(entries->name);
       qURLdecode(entries->value);
+      if(_reserved_name(entries->name)) qError("Reserved query name can not be used.");
     }
     if(query)free(query);
   }
@@ -161,8 +180,14 @@ char *_get_query(char *method){
     if(getenv("CONTENT_LENGTH") == NULL) qError("_get_query() : Your browser sent a non-HTTP compliant message.");
 
     cl = atoi(getenv("CONTENT_LENGTH"));
+    if(cl < 0 || cl > Q_MAX_POST) qError("_get_query() : Invalid content length.");
     query = (char *)malloc(sizeof(char) * (cl + 1));
-    for(i = 0; i < cl; i++)query[i] = fgetc(stdin);
+    if(query == NULL) qError("_get_query() : Memory allocation fail.");
+    for(i = 0; i < cl; i++) {
+      int c = fgetc(stdin);
+      if(c == EOF) break;
+      query[i] = (char)c;
+    }
     query[i] = '\0';
     return query;
   }
@@ -185,13 +210,24 @@ int _parse_multipart_data(void) {
   int  c, c_count;
 
   int  finish;
+  long total;
+  char *cp;
 
   entries = back = NULL;
 
-  /* find boundary string */
-  sprintf(boundary,    "--%s", strstr(getenv("CONTENT_TYPE"), "boundary=") + strlen("boundary="));
+  /* request body size limit */
+  if(getenv("CONTENT_LENGTH") == NULL) qError("_parse_multipart_data() : Your browser sent a non-HTTP compliant message.");
+  total = atol(getenv("CONTENT_LENGTH"));
+  if(total < 0 || total > Q_MAX_POST) qError("_parse_multipart_data() : Invalid content length.");
+
+  /* find boundary string, RFC 2046 limits it to 70 characters */
+  if((cp = strstr(getenv("CONTENT_TYPE"), "boundary=")) == NULL) qError("_parse_multipart_data() : Boundary not found.");
+  cp += strlen("boundary=");
+  if(strlen(cp) > 70) qError("_parse_multipart_data() : Boundary is too long.");
+  sprintf(boundary,    "--%s", cp);
   /* This is not necessary but, I can not trust MS Explore */
   qRemoveSpace(boundary);
+  if(strlen(boundary) <= 2) qError("_parse_multipart_data() : Boundary not found.");
 
   sprintf(boundaryEOF, "%s--", boundary);
 
@@ -231,36 +267,30 @@ int _parse_multipart_data(void) {
 
   for(amount = 0, finish = 0; finish != 1; amount++){
     /* get name field */
-    _fgetstring(buf, sizeof(buf), stdin);
-    name = (char *)malloc(sizeof(char) * (strlen(buf) - strlen("Content-Disposition: form-data; name=\"") + 1));
-    strcpy(name, buf + strlen("Content-Disposition: form-data; name=\""));
+    if(_fgetstring(buf, sizeof(buf), stdin) == NULL) qError("_parse_multipart_data() : Unexpected end of data.");
+    if(strncasecmp(buf, "Content-Disposition: form-data; name=\"", strlen("Content-Disposition: form-data; name=\"")) != 0) qError("_parse_multipart_data() : String format invalid.");
+    name = strdup(buf + strlen("Content-Disposition: form-data; name=\""));
+    if(name == NULL) qError("_parse_multipart_data() : Memory allocation fail.");
     for(c_count = 0; (name[c_count] != '\"') && (name[c_count] != '\0'); c_count++);
     name[c_count] = '\0';
+    if(_reserved_name(name)) qError("Reserved query name can not be used.");
 
     /* get filename field */
-    if(strstr(buf, "; filename=\"") != NULL) {
-      int erase;
-      filename = (char *)malloc(sizeof(char) * (strlen(buf) - strlen("Content-Disposition: form-data; name=\"") + 1));
-      strcpy(filename, strstr(buf, "; filename=\"") + strlen("; filename=\""));
+    if((cp = strstr(buf, "; filename=\"")) != NULL) {
+      filename = strdup(cp + strlen("; filename=\""));
+      if(filename == NULL) qError("_parse_multipart_data() : Memory allocation fail.");
       for(c_count = 0; (filename[c_count] != '\"') && (filename[c_count] != '\0'); c_count++);
       filename[c_count] = '\0';
-      /* erase '\' */
-      for(erase = 0, c_count = strlen(filename) - 1; c_count >= 0; c_count--) {
-        if(erase == 1) filename[c_count]= ' ';
-        else {
-          if(filename[c_count] == '\\') {
-            erase = 1;
-            filename[c_count] = ' ';
-          }
-        }
-      }
+      /* strip directory part, both '/' and '\' */
+      for(cp = filename + strlen(filename); cp > filename && *(cp - 1) != '/' && *(cp - 1) != '\\'; cp--);
+      memmove(filename, cp, strlen(cp) + 1);
       qRemoveSpace(filename);
     }
     else filename = "";
 
     /* skip header */
     for(;;) {
-      _fgetstring(buf, sizeof(buf), stdin);
+      if(_fgetstring(buf, sizeof(buf), stdin) == NULL) qError("_parse_multipart_data() : Unexpected end of data.");
       if (!strcmp(buf, "\r\n")) break;
     }
 
@@ -283,6 +313,7 @@ int _parse_multipart_data(void) {
         free(value);
         value = valuetmp;
       }
+      if(c_count >= total) qError("_parse_multipart_data() : Data is longer than content length.");
       value[c_count++] = (char)c;
 
       /* check end */
@@ -597,7 +628,13 @@ void qSetCookie(char *name, char *value, int exp_days, char *domain, char *path,
 
   /* Name=Value */
   Name = qURLencode(name), Value = qURLencode(value);
-  sprintf(cookie, "%s=%s", Name, Value);
+  if(Name == NULL || Value == NULL || strlen(Name) + strlen(Value) + 1 > 4 * 1024) {
+    /* browsers do not store cookies over 4KB, just skip it */
+    if(Name) free(Name);
+    if(Value) free(Value);
+    return;
+  }
+  snprintf(cookie, sizeof(cookie), "%s=%s", Name, Value);
   free(Name), free(Value);
 
   if(exp_days != 0) {
@@ -605,23 +642,27 @@ void qSetCookie(char *name, char *value, int exp_days, char *domain, char *path,
     char gmt[256];
     plus_sec = (time_t)(exp_days * 24 * 60 * 60);
     qGetGMTime(gmt, plus_sec);
-    strcat(cookie, "; expires=");
-    strcat(cookie, gmt);
+    _qstrcat(cookie, "; expires=", sizeof(cookie));
+    _qstrcat(cookie, gmt, sizeof(cookie));
   }
 
   if(domain != NULL) {
-    strcat(cookie, "; domain=");
-    strcat(cookie, domain);
+    _qstrcat(cookie, "; domain=", sizeof(cookie));
+    _qstrcat(cookie, domain, sizeof(cookie));
   }
 
   if(path != NULL) {
-    strcat(cookie, "; path=");
-    strcat(cookie, path);
+    _qstrcat(cookie, "; path=", sizeof(cookie));
+    _qstrcat(cookie, path, sizeof(cookie));
   }
 
   if(secure != NULL) {
-    strcat(cookie, "; secure");
+    _qstrcat(cookie, "; secure", sizeof(cookie));
   }
+
+  _qstrcat(cookie, "; HttpOnly", sizeof(cookie));
+  /* never sent with cross-site requests (CSRF) */
+  _qstrcat(cookie, "; SameSite=Strict", sizeof(cookie));
 
   printf("Set-Cookie: %s\n", cookie);
 }
@@ -722,8 +763,12 @@ void qURLdecode(char *str){
         break;
       }
       case '%':{
-        str[i] = _x2c(str[j + 1], str[j + 2]);
-        j += 2;
+        /* decode only valid '%XX', or str[j + 2] may be beyond the end */
+        if(isxdigit((unsigned char)str[j + 1]) && isxdigit((unsigned char)str[j + 2])) {
+          str[i] = _x2c(str[j + 1], str[j + 2]);
+          j += 2;
+        }
+        else str[i] = str[j];
         break;
       }
       default:{
@@ -755,18 +800,51 @@ void qContentType(char *mimetype){
 **         Mode : see qPuts()
 **********************************************/
 int qPrintf(int mode, char *format, ...){
-  char buf[256];
+  char *buf;
   int  status;
   va_list arglist;
 
   va_start(arglist, format);
-  status = vsprintf(buf, format, arglist);
-  if(status == EOF) return status;
-  if(strlen(buf) > 256 - 1)qError("qprintf() : Message is too long");
+  status = vsnprintf(NULL, 0, format, arglist);
+  va_end(arglist);
+  if(status < 0) return EOF;
+
+  if((buf = (char *)malloc(status + 1)) == NULL) qError("qPrintf() : Memory allocation fail.");
+  va_start(arglist, format);
+  vsnprintf(buf, status + 1, format, arglist);
+  va_end(arglist);
 
   qPuts(mode, buf);
+  free(buf);
 
   return status;
+}
+
+/**********************************************
+** Usage : qHtmlEncode(string);
+** Return: Pointer of encoded str which is memory allocated.
+** Do    : Escape & < > " ' for safe HTML output
+**********************************************/
+char *qHtmlEncode(char *str){
+  char *encstr;
+  int i, j;
+
+  if(str == NULL) str = "";
+  if((encstr = (char *)malloc((strlen(str) * 6) + 1)) == NULL) qError("qHtmlEncode() : Memory allocation fail.");
+
+  for(i = j = 0; str[i]; i++){
+    switch(str[i]) {
+      case '&'  : strcpy(encstr + j, "&amp;");  j += 5; break;
+      case '<'  : strcpy(encstr + j, "&lt;");   j += 4; break;
+      case '>'  : strcpy(encstr + j, "&gt;");   j += 4; break;
+      case '\"' : strcpy(encstr + j, "&quot;"); j += 6; break;
+      case '\'' : strcpy(encstr + j, "&#39;");  j += 5; break;
+      default   : encstr[j++] = str[i]; break;
+    }
+  }
+  encstr[j] = '\0';
+
+  return encstr;
 }
 
 /**********************************************
@@ -927,10 +1005,18 @@ void qError(char *format, ...){
 
   va_start(arglist, format);
 
-  status = vsprintf(buf, format, arglist);
-  if(strlen(buf) + 1 > 1024 || status == EOF){
-    printf("qError() : Message is too long or not valid");
+  /* message is truncated when it is too long */
+  status = vsnprintf(buf, sizeof(buf), format, arglist);
+  va_end(arglist);
+  if(status < 0){
+    printf("qError() : Message is not valid");
     exit(1);
+  }
+
+  /* control characters may forge log lines */
+  {
+    char *cp;
+    for(cp = buf; *cp; cp++) if((unsigned char)*cp < 0x20 || *cp == 0x7f) *cp = ' ';
   }
 
   logstatus = 0;
@@ -965,18 +1051,28 @@ void qError(char *format, ...){
   else {
     qContentType("text/html");
 
+    char *htmlbuf, *cp;
+
     if(_error_contact_info != NULL) {
-      strcat(buf, " [Administrator:");
-      strcat(buf, _error_contact_info);
-      strcat(buf, "]");
+      _qstrcat(buf, " [Administrator:", sizeof(buf));
+      _qstrcat(buf, _error_contact_info, sizeof(buf));
+      _qstrcat(buf, "]", sizeof(buf));
     }
-    if(logstatus == -1) strcat(buf, " [ERROR LOGGING FAIL]");
+    if(logstatus == -1) _qstrcat(buf, " [ERROR LOGGING FAIL]", sizeof(buf));
+
+    htmlbuf = qHtmlEncode(buf);
 
     printf("<html>\n");
     printf("<head>\n");
-    printf("<title>Error: %s</title>\n", buf);
+    printf("<title>Error: %s</title>\n", htmlbuf);
     printf("<script language='JavaScript'>\n");
-    printf("  alert(\"%s\");\n", buf);
+    /* escape every non-alphanumeric character for JavaScript string */
+    printf("  alert(\"");
+    for(cp = buf; *cp; cp++) {
+      if(isalnum((unsigned char)*cp) || *cp == ' ' || (unsigned char)*cp >= 0x80) printf("%c", *cp);
+      else printf("\\x%02x", (unsigned char)*cp);
+    }
+    printf("\");\n");
     printf("  history.back();\n");
     printf("</script>\n");
     printf("</head>\n");
@@ -1070,7 +1166,7 @@ char *qCGIname(void) {
 
   if(getenv("SCRIPT_NAME") == NULL) return NULL;
 
-  strcpy(cgi_name, getenv("SCRIPT_NAME"));
+  snprintf(cgi_name, sizeof(cgi_name), "%s", getenv("SCRIPT_NAME"));
 
   /* Fetch filename in string which include directory name */
   for(c = cgi_name + strlen(cgi_name) - 1; c >= cgi_name && !(*c == '/' || *c == '\\'); c--);
@@ -1163,8 +1259,13 @@ void qDownload(char *filename) {
   for(; c >= file; c--) *c = ' ';
   qRemoveSpace(file);
 
+  /* keep header safe : no control characters, quotes and backslashes */
+  for(c = file; *c; c++) {
+    if((unsigned char)*c < 0x20 || *c == 0x7f || *c == '\"' || *c == '\\' || *c == ';') *c = '_';
+  }
+
   printf ("Content-type: application/octet-stream\n");
-  printf ("Content-disposition: attachment; filename=%s\n", file);
+  printf ("Content-disposition: attachment; filename=\"%s\"\n", file);
   printf ("Content-Transfer-Encoding: binary\n");
   printf ("\n");
   free(file);
@@ -1343,6 +1444,8 @@ char *qStrStr(char *orgstr, char *tokstr) {
   qStrBig(org), qStrBig(tok);
 
   retp = strstr(org, tok);
+  /* point into original string, not into the freed copy */
+  if(retp != NULL) retp = orgstr + (retp - org);
 
   free(org), free(tok);
 
@@ -1357,8 +1460,8 @@ char *qStrStr(char *orgstr, char *tokstr) {
 **         Output: 1,234,567
 **********************************************/
 char *qitocomma(int value) {
-  static char str[10+1];
-  char buf[10+1], *strp, *bufp;
+  static char str[14+1];
+  char buf[11+1], *strp, *bufp;
   
   sprintf(buf, "%d", value);
   for (strp = str, bufp = buf; *bufp != '\0'; strp++, bufp++) {

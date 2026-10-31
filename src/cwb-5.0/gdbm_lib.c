@@ -71,8 +71,8 @@ char *DBFetch(char *format, ...){
   va_list arglist;
 
   va_start(arglist, format);
-  status = vsprintf(key, format, arglist);
-  if(strlen(key) > 1000 || status == EOF) qError("DBFetch() : Key is too long or not valid");
+  status = vsnprintf(key, sizeof(key), format, arglist);
+  if(status < 0 || status > 1000) qError("DBFetch() : Key is too long or not valid");
 
   if(_dbf == NULL) qError("There is no opened database.");
   buf.dptr = key;
@@ -90,10 +90,10 @@ int DBiFetch(char *format, ...){
   int  i;
 
   va_start(arglist, format);
-  status = vsprintf(key, format, arglist);
-  if(strlen(key) > 1000 || status == EOF) qError("DBiFetch() : Key is too long or not valid");
+  status = vsnprintf(key, sizeof(key), format, arglist);
+  if(status < 0 || status > 1000) qError("DBiFetch() : Key is too long or not valid");
 
-  str = DBFetch(key);
+  str = DBFetch("%s", key);
 
   if(str == NULL) return 0;
   else {
@@ -121,7 +121,7 @@ void DBStore(char *key, char *str, int flag){
 void DBiStore(char *key, int value, int flag){
   char buf[0xFF];
 
-  sprintf(buf, "%d", value);
+  snprintf(buf, sizeof(buf), "%d", value);
   DBStore(key, buf, flag);
 }
 
@@ -134,8 +134,8 @@ int DBDelete(char *format, ...){
   va_list arglist;
 
   va_start(arglist, format);
-  status = vsprintf(key, format, arglist);
-  if(strlen(key) > 1000 || status == EOF) qError("DBDelete() : Key is too long or not valid");
+  status = vsnprintf(key, sizeof(key), format, arglist);
+  if(status < 0 || status > 1000) qError("DBDelete() : Key is too long or not valid");
 
   if(_dbf == NULL) qError("There is no database to fetch.");
   buf.dptr  = key;
@@ -151,10 +151,10 @@ int DBIsKeyExist(char *format, ...){
   char *str;
 
   va_start(arglist, format);
-  status = vsprintf(key, format, arglist);
-  if(strlen(key) > 1000 || status == EOF) qError("DBIsKeyExist() : Key is too long or not valid");
+  status = vsnprintf(key, sizeof(key), format, arglist);
+  if(status < 0 || status > 1000) qError("DBIsKeyExist() : Key is too long or not valid");
 
-  if((str = DBFetch(key)) == NULL) return FALSE;
+  if((str = DBFetch("%s", key)) == NULL) return FALSE;
 
   free(str);
   return TRUE;

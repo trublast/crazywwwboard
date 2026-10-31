@@ -18,16 +18,17 @@ void cwb_download(SysConfig *sys, DB *db, DBConfig *conf){
   if(!strcmp(conf->ReadMode, "admin")) check_password(sys, db, conf);
 
   /* DB가 저장된 실제 디렉토리 경로를 저장한다 */
-  sprintf(dbpath, "%s/%s/%s.%s", sys->RealBasePath, sys->DataDirectory, db->db, sys->DataExtension);
+  snprintf(dbpath, sizeof(dbpath), "%s/%s/%s.%s", sys->RealBasePath, sys->DataDirectory, db->db, sys->DataExtension);
   DBOpen(dbpath, GDBM_WRITER);
   filename = DBFetch("%d.Filename", db->num);
   if(filename == NULL)      { DBClose(); qError("Do not use manually."); }
   if(!strcmp(filename, "")) { DBClose(); qError("There is no attached file in a article number %d.", db->num); }
-  sprintf(filepath, "%s/%s/%s/%s", sys->RealBasePath, sys->DataDirectory, db->db, filename);
+  if(strchr(filename, '/') != NULL || filename[0] == '.') { DBClose(); qError("Invalid filename."); }
+  snprintf(filepath, sizeof(filepath), "%s/%s/%s/%s", sys->RealBasePath, sys->DataDirectory, db->db, filename);
   free(filename);
 
-  sprintf(buf, "%d.Download", db->num);
-  download = DBiFetch(buf);
+  snprintf(buf, sizeof(buf), "%d.Download", db->num);
+  download = DBiFetch("%s", buf);
   DBiStore(buf, ++download, GDBM_REPLACE);
 
   DBClose();

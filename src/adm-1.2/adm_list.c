@@ -28,6 +28,7 @@ typedef struct {
 }ADMList;
 
 ADMList *getList(SysConfig *sys, int *tcount);
+int  getDBname(char *dbname, int size, char *filename, char *ext);
 void fetchDBinfo(char *dbDir, char *statDir, ADMList *info);
 
 void adm_list(SysConfig *sys, DB *db) {
@@ -36,6 +37,7 @@ void adm_list(SysConfig *sys, DB *db) {
   char warm_rmlog[0xff], warm_rmstat[0xff], warm_rmdb[0xff];
   int  access_logExist, error_logExist, statExist;
   char buf[0xff];
+  char *dbpass, *prog;
 
   /* clear */
   total.TotalArticles = 0;
@@ -78,17 +80,17 @@ void adm_list(SysConfig *sys, DB *db) {
     total.TodayHits     += info[i].TodayHits;
     if((strcmp(total.Started, info[i].Started) > 0)) strcpy(total.Started, info[i].Started);
 
-    sprintf(warm_rmstat, "Do you want to CLEAR STATISTICS for %s ?", info[i].DBname);
-    sprintf(warm_rmlog,  "Do you want to CLEAR LOG FILE for %s ?", info[i].DBname);
-    sprintf(warm_rmdb,   "Do you want to REMOVE DATABASE named %s ?", info[i].DBname);
+    snprintf(warm_rmstat, sizeof(warm_rmstat), "Do you want to CLEAR STATISTICS for %s ?", info[i].DBname);
+    snprintf(warm_rmlog,  sizeof(warm_rmlog),  "Do you want to CLEAR LOG FILE for %s ?", info[i].DBname);
+    snprintf(warm_rmdb,   sizeof(warm_rmdb),   "Do you want to REMOVE DATABASE named %s ?", info[i].DBname);
 
-    sprintf(buf, "%s/%s/access_log.%s", sys->RealBasePath, sys->LogDirectory, info[i].DBname);
+    snprintf(buf, sizeof(buf), "%s/%s/access_log.%s", sys->RealBasePath, sys->LogDirectory, info[i].DBname);
     access_logExist = qCheckFile(buf);
 
-    sprintf(buf, "%s/%s/error_log.%s", sys->RealBasePath, sys->LogDirectory, info[i].DBname);
+    snprintf(buf, sizeof(buf), "%s/%s/error_log.%s", sys->RealBasePath, sys->LogDirectory, info[i].DBname);
     error_logExist = qCheckFile(buf);
 
-    sprintf(buf, "%s/%s/%s.%s", sys->RealBasePath, sys->StatDirectory, info[i].DBname, sys->StatExtension);
+    snprintf(buf, sizeof(buf), "%s/%s/%s.%s", sys->RealBasePath, sys->StatDirectory, info[i].DBname, sys->StatExtension);
     statExist = qCheckFile(buf);
 
     printf("  <tr bgcolor=#f0f9ff><!-- DB Name '%s' -->\n", info[i].DBname);
@@ -100,12 +102,17 @@ void adm_list(SysConfig *sys, DB *db) {
     printf("    <td align=right><font size=2 face='Arial'>%d/%d</font></td>\n", info[i].TodayHits, info[i].TotalHits);
     printf("    <td align=right><font size=2 face='Arial'>%d</font></td>\n", info[i].HitsDay);
     printf("    <td align=left><table border=0 cellspacing=0 cellpadding=0><tr>\n");
-    printf("      <form><td align=center><font size=2><input type=button value='VIEW' onClick=\"fork('view', '%s?db=%s&mode=list&password=%s')\"></font></td></form>\n", sys->ProgramName, info[i].DBname, info[i].Password);
-    printf("      <form><td align=center><font size=2><input type=button value='CONF' onClick=\"fork('conf', '%s?db=%s&mode=admin&password=%s')\"></font></td></form>\n", sys->ProgramName, info[i].DBname, info[i].Password);
-    printf("      <form><td align=center><font size=2><input type=button value='SYNC' onClick=\"fork('sync', '%s?db=%s&mode=sync&password=%s')\"></font></td></form>\n", sys->ProgramName, info[i].DBname, info[i].Password);
+    /* password is POSTed, not put into URLs */
+    prog   = qHtmlEncode(sys->ProgramName);
+    dbpass = qHtmlEncode(info[i].Password);
+    printf("      <form method='post' action='%s'><td align=center><font size=2><input type=hidden name='db' value='%s'><input type=hidden name='mode' value='list'><input type=hidden name='password' value='%s'><input type=button value='VIEW' onClick=\"forkPost('view', this.form)\"></font></td></form>\n", prog, info[i].DBname, dbpass);
+    printf("      <form method='post' action='%s'><td align=center><font size=2><input type=hidden name='db' value='%s'><input type=hidden name='mode' value='admin'><input type=hidden name='password' value='%s'><input type=button value='CONF' onClick=\"forkPost('conf', this.form)\"></font></td></form>\n", prog, info[i].DBname, dbpass);
+    printf("      <form method='post' action='%s'><td align=center><font size=2><input type=hidden name='db' value='%s'><input type=hidden name='mode' value='sync'><input type=hidden name='password' value='%s'><input type=button value='SYNC' onClick=\"forkPost('sync', this.form)\"></font></td></form>\n", prog, info[i].DBname, dbpass);
     if(statExist) {
-      printf("      <form><td align=center><font size=2><input type=button value='STAT' onClick=\"fork('stat', '%s?db=%s&mode=stat&password=%s')\"></font></td></form>\n", sys->ProgramName, info[i].DBname, info[i].Password);
+      printf("      <form method='post' action='%s'><td align=center><font size=2><input type=hidden name='db' value='%s'><input type=hidden name='mode' value='stat'><input type=hidden name='password' value='%s'><input type=button value='STAT' onClick=\"forkPost('stat', this.form)\"></font></td></form>\n", prog, info[i].DBname, dbpass);
     }
+    free(prog);
+    free(dbpass);
     if(access_logExist) {
       printf("      <form><td align=center><font size=2><input type=button value='LOG' onClick=\"fork('log', '%s/%s/access_log.%s')\"></font></td></form>\n", sys->HtmlBasePath, sys->LogDirectory, info[i].DBname);
     }
@@ -188,12 +195,12 @@ void adm_list(SysConfig *sys, DB *db) {
 
   /* modify messages */
   printf("    <form method='post' action='%s'>\n", sys->AdmPrgName);
-  printf("    <td align=center><font size=2><input type=button value='MODIFY MESSAGES' onClick=\"fork('message', '%s?mode=message&password=%s')\"></font></td>\n", sys->AdmPrgName, db->password);
+  printf("    <td align=center><font size=2><input type=hidden name='mode' value='message'><input type=hidden name='password' value='%s'><input type=button value='MODIFY MESSAGES' onClick=\"forkPost('message', this.form)\"></font></td>\n", db->password);
   printf("    </td></form>\n");
 
   /* global configuration */
   printf("    <form method='post' action='%s'>\n", sys->AdmPrgName);
-  printf("    <td align=left><font size=2><input type=button value='GLOBAL CONFIGURATION' onClick=\"fork('config', '%s?mode=config&password=%s')\"></font></td>\n", sys->AdmPrgName, db->password);
+  printf("    <td align=left><font size=2><input type=hidden name='mode' value='config'><input type=hidden name='password' value='%s'><input type=button value='GLOBAL CONFIGURATION' onClick=\"forkPost('config', this.form)\"></font></td>\n", db->password);
   printf("    </form>\n");
 
   printf("  </tr>\n");
@@ -209,13 +216,14 @@ ADMList *getList(SysConfig *sys, int *tcount) {
 /*  struct  direct *dirp; */ /* CC일경우 활성화 */
   int     i, j, count;
   char    dbPath[0xff], dbDir[0xff], statDir[0xff];
+  char    name[MAX_DBNAME_LEN + 1];
 
-  sprintf(dbPath,      "%s/%s", sys->RealBasePath, sys->DataDirectory);
+  snprintf(dbPath, sizeof(dbPath), "%s/%s", sys->RealBasePath, sys->DataDirectory);
 
   /* DB의 갯수를 파악 한다 */
   if((dp = opendir(dbPath)) == NULL) qError("Database directory(%s) not found.", dbPath);
   for(count = 0; (dirp = readdir(dp)) != NULL; ) {
-    if(strstr(dirp->d_name, sys->DataExtension) != NULL) count++;
+    if(getDBname(name, sizeof(name), dirp->d_name, sys->DataExtension) == TRUE) count++;
   }
   closedir(dp);
 
@@ -225,16 +233,18 @@ ADMList *getList(SysConfig *sys, int *tcount) {
   /* db를 리스트에 저장 */
   dblist = (char **)malloc(sizeof(char *) * (count + 1));  /* 0번 미사용 */
 
-  dp = opendir(dbPath);
+  if(dblist == NULL) qError("Memory allocation fail.");
+
+  if((dp = opendir(dbPath)) == NULL) qError("Database directory(%s) not found.", dbPath);
   for(i = 0; (dirp = readdir(dp)) != NULL; ) {
-    if(strstr(dirp->d_name, sys->DataExtension) == NULL) continue;
+    if(getDBname(name, sizeof(name), dirp->d_name, sys->DataExtension) == FALSE) continue;
     if(++i > count) qError("Fatal error. Count mismatch.");
 
-    tmp = (char *)malloc(sizeof(char) * (strlen(dirp->d_name) + 1));
-    strcpy(tmp, dirp->d_name);
+    if((tmp = strdup(name)) == NULL) qError("Memory allocation fail.");
     dblist[i] = tmp;
   }
   closedir(dp);
+  if(i != count) qError("Fatal error. Count mismatch.");
 
   /* list sort */
   for(i = 1; i < count; i++) {
@@ -264,16 +274,31 @@ ADMList *getList(SysConfig *sys, int *tcount) {
     info[i].Password      = NULL;
 
     /* Store DB Name */
-    strcpy(info[i].DBname, dblist[i]);
-    info[i].DBname[strlen(info[i].DBname) - (1 + strlen(sys->DataExtension))] = '\0';
+    snprintf(info[i].DBname, sizeof(info[i].DBname), "%s", dblist[i]);
 
     /* make db, log : system path */
-    sprintf(dbDir,    "%s/%s/%s.%s", sys->RealBasePath, sys->DataDirectory, info[i].DBname, sys->DataExtension);
-    sprintf(statDir,  "%s/%s/%s.%s", sys->RealBasePath, sys->StatDirectory, info[i].DBname, sys->StatExtension);
+    snprintf(dbDir,   sizeof(dbDir),   "%s/%s/%s.%s", sys->RealBasePath, sys->DataDirectory, info[i].DBname, sys->DataExtension);
+    snprintf(statDir, sizeof(statDir), "%s/%s/%s.%s", sys->RealBasePath, sys->StatDirectory, info[i].DBname, sys->StatExtension);
 
     fetchDBinfo(dbDir, statDir, &info[i]);
   }
  return info;
+}
+
+/* "NAME.DataExtension" -> NAME; NAME must be 0-9, A-Z, a-z (it is put into HTML and JavaScript) */
+int getDBname(char *dbname, int size, char *filename, char *ext) {
+  int len, namelen;
+
+  len     = strlen(filename);
+  namelen = len - (int)strlen(ext) - 1;
+  if(namelen <= 0 || namelen > MAX_DBNAME_LEN || namelen >= size) return FALSE;
+  if(filename[namelen] != '.' || strcmp(filename + namelen + 1, ext)) return FALSE;
+
+  strncpy(dbname, filename, namelen);
+  dbname[namelen] = '\0';
+  if(qStr09AZaz(dbname) == FALSE) return FALSE;
+
+  return TRUE;
 }
 
 void fetchDBinfo(char *dbDir, char *statDir, ADMList *info) {
@@ -284,7 +309,7 @@ void fetchDBinfo(char *dbDir, char *statDir, ADMList *info) {
   char *tmp;
 
   localtime = qGetTime();
-  sprintf(dateStr, "%04d%02d%02d", localtime->tm_year, localtime->tm_mon, localtime->tm_mday);
+  snprintf(dateStr, sizeof(dateStr), "%04d%02d%02d", localtime->tm_year, localtime->tm_mon, localtime->tm_mday);
 
   DBOpen(dbDir, GDBM_READER);
   lastNum = DBiFetch("conf.LastNum");
@@ -320,17 +345,19 @@ void fetchDBinfo(char *dbDir, char *statDir, ADMList *info) {
      DBOpen(statDir, GDBM_READER);
 
     /* 로그 시작일 해석 */
-    if((tmp = DBFetch("stat.Started")) == NULL) tmp = "19000000000000";
-    sscanf(tmp, "%04d%02d%02d", &year, &mon, &day);
+    if((tmp = DBFetch("stat.Started")) == NULL) tmp = strdup("19000000000000");
+    if(tmp == NULL || sscanf(tmp, "%04d%02d%02d", &year, &mon, &day) != 3 || year < 1900 || year > 9999 || mon < 0 || mon > 12 || day < 0 || day > 31) {
+      year = 1900, mon = 0, day = 0;
+    }
     free(tmp);
 
-    sprintf(info->Started, "%02d%02d%02d", year-1900, mon, day);
+    snprintf(info->Started, sizeof(info->Started), "%02d%02d%02d", year-1900, mon, day);
 
     for(daycount = 0; ; day++) {
       if(day == 32) mon++, day = 1;
       if(mon == 13) year++, mon = 1;
 
-      sprintf(runDate, "%04d%02d%02d", year, mon, day);
+      snprintf(runDate, sizeof(runDate), "%04d%02d%02d", year, mon, day);
       if(strcmp(runDate, dateStr) > 0) break;
 
       stats = DBiFetch("stat.%s", runDate);
