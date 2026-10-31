@@ -1,0 +1,19 @@
+# CrazyWWWBoard : database files must not be downloaded via HTTP (security).
+# Uploaded files stay public because images are shown inline.
+<FilesMatch "\.(gdbm|stat-gdbm)$">
+  <IfModule mod_authz_core.c>
+    Require all denied
+  </IfModule>
+  <IfModule !mod_authz_core.c>
+    Order allow,deny
+    Deny from all
+  </IfModule>
+</FilesMatch>
+
+# Never run uploaded files as scripts
+<IfModule mod_php.c>
+  php_flag engine off
+</IfModule>
+<IfModule mod_php7.c>
+  php_flag engine off
+</IfModule>

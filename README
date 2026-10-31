@@ -1,6 +1,22 @@
 AS OF TODAY, THIS SOFTWARE IS UNDER PUBLIC GNU LICENSE
 BY THE FOUNDER OF NOBREAK TECHNOLOGIES, SEUNGYOUNG "STEVE" KIM
 
+SECURITY NOTES (security-fixes branch)
+--
+- CGIs are installed without setuid/setgid. Unless you use suEXEC or
+  CGIWrap, cwb-data/data, cwb-data/stat and cwb-data/log must be
+  writable by the web server user.
+- cwb-data/{data,stat,log}/.htaccess deny HTTP access to database files
+  and logs (Apache). For other web servers deny '*.gdbm', '*.stat-gdbm',
+  stat/ and log/ yourself, or move them out of the document root.
+- Uploaded files get a safe name : only [A-Za-z0-9._-], script-like
+  extensions (php, cgi, html, ...) are disabled.
+- There is no default master password. 'Install-sh' asks it and writes
+  CrazyAdmin.conf. Paths in CrazyWWWBoard.conf can not be changed via web.
+- Known limitation : the crypt() hash of a password works as a session
+  token (cookie PASSWORD, hidden form fields). Keep database files
+  private, use HTTPS.
+
 Below is the original README
 --
 ==================================================================
@@ -336,7 +352,8 @@ Follow Step 1 - Setp 5.
                       (c) Nobreak Technologies, Inc.
 
 =====================================================================
-The password is setted by '0000' first. Please type '0000' to enter.
+Type the master password which you entered during 'Install-sh'.
+(There is no default password '0000' anymore.)
 
 ==[CrazyAdmin.cgi Step2]=============================================
 
@@ -1615,8 +1632,10 @@ A.   Call that DB admin menu of CrazyAdmin.cgi using [Conf] button,
 
 Q-7  I lost the master password of 'CrazyAdmin.cgi'.
 
-A.   Overwrite CrzayAdmin.conf with conf/CrazyAdmin.conf-dist, then 
-     you can access using password '0000'.
+A.   Write a new CrazyAdmin.conf next to CrazyAdmin.cgi :
+       perl -e 'print crypt("NEWPASS", "SY"), "\n"' > CrazyAdmin.conf
+       chmod 600 CrazyAdmin.conf
+     ("SY" is CryptSalt in CrazyWWWBoard.conf)
 
 Q-8. I am a old version(3.x , 2.x) user.  Can I use my DB with CWB.
      

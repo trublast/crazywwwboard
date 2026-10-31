@@ -82,7 +82,7 @@ cat << __EOF__
 Thank you very much!!!
 
 All installation processes are completely successed.
-You can invocate 'CrazyAdmin.cgi'(Password:0000) in your web browser
+You can invocate 'CrazyAdmin.cgi'(with your master password) in your web browser
 to create new databases and to modify other administrative records.
 
           Purchase information : http://cwb98.nobreak.com
@@ -127,11 +127,12 @@ check_req_directory() {
 			echo "Not found!"
 			ERROR="TRUE"	
 		else
-			if [ -f "$file" ] && [ -x "$file" ] && [ -u "$file" ] && [ -g "$file" ]; then
+			# setuid/setgid is not used anymore (security)
+			if [ -f "$file" ] && [ -x "$file" ] && [ ! -u "$file" ] && [ ! -g "$file" ]; then
 				echo "OK."
 			else
 				echo "Permission mismatched. Adjusted. OK"
-				chmod 6755 $file
+				chmod 0755 $file
 			fi
 		fi
 	done
@@ -334,6 +335,23 @@ query_in() {
 	fi
 	echo ""
 
+	# There is no default master password anymore (security)
+	echo "  @ Enter master password of 'CrazyAdmin.cgi' (2-8 chars, 0-9 A-Z a-z)"
+	while true; do
+		printf "  o INPUT -> "
+		stty -echo; read masterPass; stty echo; echo ""
+		printf "  o AGAIN -> "
+		stty -echo; read masterPass2; stty echo; echo ""
+		if [ "$masterPass" != "$masterPass2" ]; then
+			echo "    Two passwords must be same. Try again, please."
+		elif echo "$masterPass" | grep '^[0-9A-Za-z]\{2,8\}$' > /dev/null; then
+			break
+		else
+			echo "    Invalid password. Try again, please."
+		fi
+	done
+	echo ""
+
 	echo "  @ Which language do you use familiar? We support below languages."
 	echo "    [en] English , [kr] Korean , [jp] Japanese"
 
@@ -429,6 +447,17 @@ install() {
 	$sed -e "s%@LicenseKey@%$licenseKey%" -e "s%@AdminName@%$adminName%" -e "s%@AdminEmail@%$adminEmail%" -e "s%@RealBasePath@%$docRoot/cwb-data%" -e "s%@HtmlBasePath@%$urlRoot/cwb-data%" -e "s%@Help@%message/help-$lang.txt%" -e "s%@Sendmail@%$sendmail%" "$conf/CrazyWWWBoard.conf-dist_$lang" > "$cgiBin/CrazyWWWBoard.conf"
 	echo ""
 
+	echo "Step 1-1 : Generating master password file 'CrazyAdmin.conf'"
+	cryptSalt=`$sed -n 's/^CryptSalt[ 	]*=[ 	]*//p' "$cgiBin/CrazyWWWBoard.conf"`
+	if find_file perl; then
+		( umask 077; CWB_PASS="$masterPass" $tmp -e 'print crypt($ENV{CWB_PASS}, $ARGV[0]), "\n"' "$cryptSalt" > "$cgiBin/CrazyAdmin.conf" )
+		chmod 0600 "$cgiBin/CrazyAdmin.conf"
+		echo "  - OK"
+	else
+		echo "  - 'perl' not found. Create it by yourself : one line of crypt(password, '$cryptSalt'), mode 0600."
+	fi
+	echo ""
+
 	echo "Step 2 : Copying CGIs."
 	echo "--------------------------------------------------------------------"
 	copy "$bin/CrazyAdmin.cgi" "$cgiBin/CrazyAdmin.cgi"
@@ -445,12 +474,14 @@ install() {
 		adjperm "0755" "$cgiBin/CrazyWWWBoard.cgi"
 		adjperm "0644" "$cgiBin/CrazyWWWBoard.conf"
         else
+		# setuid/setgid CGI turns every bug into code execution as the owner,
+		# so the web server user must be able to write data directories instead.
 		echo "Normal Mode :"
-		adjperm "6755" "$cgiBin/CrazyAdmin.cgi"
-		adjperm "6755" "$cgiBin/CrazyWWWBoard.cgi"
+		adjperm "0755" "$cgiBin/CrazyAdmin.cgi"
+		adjperm "0755" "$cgiBin/CrazyWWWBoard.cgi"
 		adjperm "0644" "$cgiBin/CrazyWWWBoard.conf"
         fi
-	adjperm "6755" "$cgiBin/CrazyArchive"
+	adjperm "0755" "$cgiBin/CrazyArchive"
 	echo ""
 
 	echo "--------------------------------------------------------------------"
@@ -465,6 +496,15 @@ install() {
 		quit "ERROR : Something wrong. Please report this failure to developer."
 	fi
 	echo ""
+
+	if [ "$cgiwrap" != "Y" ]; then
+	echo "NOTICE : CGIs are not setuid anymore. Unless you use suEXEC or CGIWrap,"
+	echo "         make these directories writable by the web server user :"
+	echo "           $docRoot/$data/data"
+	echo "           $docRoot/$data/stat"
+	echo "           $docRoot/$data/log"
+	echo ""
+	fi
 
 	echo "Successfully completed."
 	printf "Press ENTER to continue..."
