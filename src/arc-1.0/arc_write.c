@@ -10,11 +10,11 @@ void arc_write(SysConfig *sys, DBArticle *article, char *db){
   int lastnum;
   char buf[0xff], *DisplayAddress;
 
-#define StoreStr(NAME) sprintf(buf, "%d." #NAME, lastnum); DBStore(buf, article->NAME, GDBM_REPLACE)
-#define StoreInt(NAME) sprintf(buf, "%d." #NAME, lastnum); DBiStore(buf, article->NAME, GDBM_REPLACE)
+#define StoreStr(NAME) snprintf(buf, sizeof(buf), "%d." #NAME, lastnum); DBStore(buf, article->NAME, GDBM_REPLACE)
+#define StoreInt(NAME) snprintf(buf, sizeof(buf), "%d." #NAME, lastnum); DBiStore(buf, article->NAME, GDBM_REPLACE)
 
   /* Insert into DB */
-  sprintf(buf, "%s/%s/%s.%s", sys->RealBasePath, sys->DataDirectory, db, sys->DataExtension);
+  if(snprintf(buf, sizeof(buf), "%s/%s/%s.%s", sys->RealBasePath, sys->DataDirectory, db, sys->DataExtension) >= (int)sizeof(buf)) qError("Path is too long.");
   DBOpen(buf, GDBM_WRITER);
 
   /* 호스트명 기록 여부 해석*/

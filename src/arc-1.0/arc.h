@@ -10,6 +10,8 @@
 
 #define REALTIME_CONFIG_FILE		"CrazyWWWBoard.conf"
 
+#define MAX_DBNAME_LEN			(32)
+
 typedef struct {
   char *RealBasePath;
 

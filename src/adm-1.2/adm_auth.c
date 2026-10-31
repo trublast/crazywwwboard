@@ -16,23 +16,13 @@ void adm_auth(SysConfig *sys, DB *db){
 
   /* password 획득 */
   if((fp = fopen(PASSWORD_FILE, "rt")) != NULL) {
-    fgets(sysPass, sizeof(sysPass), fp);
+    if(fgets(sysPass, sizeof(sysPass), fp) == NULL) strcpy(sysPass, "");
     fclose(fp);
   }
-  else { /* 파일이 없으면, 첫번째 접속 패스워드 파일 생성 */
-    char *encPass;
 
-    encPass = crypt(DEFAULT_MASTER_PASSWORD, sys->CryptSalt);
-    if((fp = fopen(PASSWORD_FILE, "wt")) == NULL) qError("FATAL : Can not create master password file %s. Check directory permissions.", PASSWORD_FILE);
-    fprintf(fp, "%s", encPass);
-    fclose(fp);
-
-    chmod(PASSWORD_FILE, 0600);
-    strcpy(sysPass, encPass);
-  }
-
+  /* fail closed : no default password, the administrator must create the file */
   qRemoveSpace(sysPass);
-  if(strlen(sysPass) == 0) qError("FATAL : Illegal password modification. Check the file %s.", PASSWORD_FILE);
+  if(strlen(sysPass) == 0) adm_nopassfile(sys);
 
   /* 비밀번호가 없다면, 확인화면 출력 */
   if(!strcmp(db->password, "")) adm_authform(sys, db);
@@ -50,8 +40,8 @@ void adm_authform(SysConfig *sys, DB *db){
   printf("<table border=0>\n");
 
   printf("<form method='post' action='%s'>\n", sys->AdmPrgName);
-  printf("  <input type='hidden' name='db'         value='%s'>\n", db->db);
-  printf("  <input type='hidden' name='mode'       value='%s'>\n", db->mode);
+  printf("  <input type='hidden' name='db'         value='%s'>\n", qHtmlEncode(db->db));
+  printf("  <input type='hidden' name='mode'       value='%s'>\n", qHtmlEncode(db->mode));
 
   if(license_valid == TRUE) {
     printf("  <tr><td colspan=2 align=center><font size=3 face='arial' color=blue><b>\n");
@@ -81,4 +71,25 @@ void adm_authform(SysConfig *sys, DB *db){
 }
 
 void adm_authsave(SysConfig *sys, DB *db){
+}
+
+/* master password file is missing or empty : explain how to create it */
+void adm_nopassfile(SysConfig *sys){
+  headHtml(sys);
+
+  printf("<table border=0 width='%s'><tr><td><font size=2 face='arial'>\n", LIST_WIDTH);
+  printf("<font color=red><b>Master password file '%s' is missing or empty.</b></font><br><br>\n", PASSWORD_FILE);
+  printf("For security reasons %s does not create a default password.\n", OFFICIAL_ADMPRG_NAME);
+  printf("The administrator must create the file '%s' in the directory of %s\n", PASSWORD_FILE, OFFICIAL_ADMCGI_NAME);
+  printf("(the same directory as %s) by hand.<br><br>\n", REALTIME_CONFIG_FILE);
+  printf("The file must contain a single line : the value of <b>crypt(password, CryptSalt)</b>,\n");
+  printf("where CryptSalt is the value of the 'CryptSalt' entry in %s\n", REALTIME_CONFIG_FILE);
+  printf("and the password is 2 to %d characters of 0-9, A-Z, a-z.\n", MAX_PASSWORD_LEN);
+  printf("Make the file readable only by the owner of %s (chmod 600).<br><br>\n", OFFICIAL_ADMCGI_NAME);
+  printf("Example : <tt>perl -e 'print crypt(\"PASSWORD\", \"SALT\"), \"\\n\"' &gt; %s</tt>\n", PASSWORD_FILE);
+  printf("</font></td></tr></table>\n");
+
+  tailHtml();
+
+  exit(0);
 }

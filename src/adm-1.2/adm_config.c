@@ -8,6 +8,13 @@
 #include "adm_message.h"
 #include "adm_config.h"
 
+/* file path related entries can not be changed through the web */
+static char *protectedKeys[] = {
+  "RealBasePath", "DataDirectory", "DataExtension", "StatDirectory", "StatExtension", "LogDirectory",
+  "HtmlHead", "HtmlTail", "MailHead", "MailTail", "Sendmail", "SendmailOptions",
+  NULL
+};
+
 void adm_config(SysConfig *sys, DB *db) {
   char *config;
   char *msg = "";
@@ -38,11 +45,31 @@ void adm_config(SysConfig *sys, DB *db) {
 }
 
 void adm_configsave(SysConfig *sys, DB *db) {
-  char *config;
+  Entry *oldconf, *newconf;
+  char *config, *oldval, *newval, *p, *q;
+  int  i;
 
   config = qValue("cConfig");
 
   if(config == NULL) qError("Do not use manually.");
+
+  /* remove CR here, as saveMessage() does, so we check exactly what is stored */
+  for(p = q = config; *p != '\0'; p++) if(*p != '\r') *q++ = *p;
+  *q = '\0';
+
+  /* protected entries must stay the same as in the current file */
+  if((oldconf = qfDecoder(REALTIME_CONFIG_FILE)) == NULL) qError("Realtime configuration file(%s) not found.", REALTIME_CONFIG_FILE);
+  newconf = qsDecoder(config);
+  for(i = 0; protectedKeys[i] != NULL; i++) {
+    oldval = qfValue(oldconf, protectedKeys[i]);
+    newval = qsValue(newconf, protectedKeys[i]);
+    if(oldval == NULL && newval == NULL) continue;
+    if(oldval == NULL || newval == NULL || strcmp(oldval, newval)) {
+      qError("'%s' can not be changed through the web. Edit %s on the server.", protectedKeys[i], REALTIME_CONFIG_FILE);
+    }
+  }
+  qfFree(oldconf);
+  qsFree(newconf);
 
   saveMessage(REALTIME_CONFIG_FILE, config);
 }

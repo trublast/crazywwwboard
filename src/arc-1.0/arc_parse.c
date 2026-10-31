@@ -12,7 +12,7 @@
 #define HEADER_SUBJECT		"Subject:"
 #define HEADER_MESSAGEID	"Message-ID:"
 
-char *pick_between(char *buf, char *string, char *quot1, char *quot2);
+char *pick_between(char *buf, int size, char *string, char *quot1, char *quot2);
 int getlines(char *string);
 
 #define BUF_LEN	(1000)
@@ -34,7 +34,7 @@ int arc_parse(DBArticle *article) {
   strcpy(article->Filename, "");
   strcpy(article->Filesize, "");
 
-  sprintf(article->Date, "%04d%02d%02d%02d%02d%02d", nowlocaltime->tm_year, nowlocaltime->tm_mon, nowlocaltime->tm_mday, nowlocaltime->tm_hour, nowlocaltime->tm_min, nowlocaltime->tm_sec);
+  snprintf(article->Date, sizeof(article->Date), "%04d%02d%02d%02d%02d%02d", nowlocaltime->tm_year, nowlocaltime->tm_mon, nowlocaltime->tm_mday, nowlocaltime->tm_hour, nowlocaltime->tm_min, nowlocaltime->tm_sec);
   strcpy(article->Domain, "");
 
   article->Lines = 0;
@@ -51,31 +51,31 @@ int arc_parse(DBArticle *article) {
 
     if(!strncmp(buf, HEADER_FROM, strlen(HEADER_FROM))) { /* From: */
       /* Name */
-      if(pick_between(article->Name, buf, "\"", "\"") != NULL);
-      else if(pick_between(article->Name, buf, "'", "'") != NULL);
-      else if(pick_between(article->Name, buf, HEADER_FROM, "<") != NULL);
-      else if(pick_between(article->Name, buf, HEADER_FROM, " ") != NULL);
-      else {
+      if(pick_between(article->Name, sizeof(article->Name), buf, "\"", "\"") != NULL);
+      else if(pick_between(article->Name, sizeof(article->Name), buf, "'", "'") != NULL);
+      else if(pick_between(article->Name, sizeof(article->Name), buf, HEADER_FROM, "<") != NULL);
+      else if(pick_between(article->Name, sizeof(article->Name), buf, HEADER_FROM, " ") != NULL);
+      else if(strlen(buf) + strlen("@#$%") < sizeof(buf)) {
         strcat(buf, "@#$%");
-        pick_between(article->Name, buf, HEADER_FROM, "@#$%");
+        pick_between(article->Name, sizeof(article->Name), buf, HEADER_FROM, "@#$%");
       }
       qRemoveSpace(article->Name);
 
       /* Email */
-      if(pick_between(article->Email, buf, "<", ">") == NULL) {
-        strcat(buf, "@#$%");
-        pick_between(article->Email, buf, HEADER_FROM, "@#$%");
+      if(pick_between(article->Email, sizeof(article->Email), buf, "<", ">") == NULL) {
+        if(strlen(buf) + strlen("@#$%") < sizeof(buf)) strcat(buf, "@#$%");
+        pick_between(article->Email, sizeof(article->Email), buf, HEADER_FROM, "@#$%");
       }
       if(qCheckEmail(qRemoveSpace(article->Email)) == FALSE) strcpy(article->Email, "");
 
       if(!strcmp(article->Name, article->Email)) strcpy(article->Name, "");
     }
     else if(!strncmp(buf, HEADER_SUBJECT, strlen(HEADER_SUBJECT))) { /* Subject: */
-      strcpy(article->Subject, buf + strlen(HEADER_SUBJECT));
+      snprintf(article->Subject, sizeof(article->Subject), "%s", buf + strlen(HEADER_SUBJECT));
       qRemoveSpace(article->Subject);
     }
     else if(!strncmp(buf, HEADER_MESSAGEID, strlen(HEADER_MESSAGEID))) { /* Message-ID */
-      pick_between(article->Domain, buf, "@", ">");
+      pick_between(article->Domain, sizeof(article->Domain), buf, "@", ">");
       qRemoveSpace(article->Domain);
     }
   }
@@ -108,7 +108,8 @@ int arc_parse(DBArticle *article) {
   return TRUE;
 }
 
-char *pick_between(char *buf, char *string, char *quot1, char *quot2) {
+/* copy the string between quot1 and quot2 into buf (at most size - 1 characters) */
+char *pick_between(char *buf, int size, char *string, char *quot1, char *quot2) {
   char *quotp1, *quotp2;
   int i;
 
@@ -119,7 +120,8 @@ char *pick_between(char *buf, char *string, char *quot1, char *quot2) {
   if(*quotp2 == *quot2) quotp2--;
   if(quotp1 > quotp2) return NULL;
 
-  for(i = 0;quotp1 <= quotp2; quotp1++, i++) buf[i] = *quotp1;
+  if(size <= 0) return NULL;
+  for(i = 0; quotp1 <= quotp2 && i < size - 1; quotp1++, i++) buf[i] = *quotp1;
   buf[i] = '\0';
 
   return buf;
