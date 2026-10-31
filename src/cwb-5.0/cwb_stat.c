@@ -25,7 +25,10 @@ void cwb_stat(SysConfig *sys, DB *db, DBConfig *conf) {
   }
   else {
     /* date string에는 YYYYMMDD가 있지만 DD는 다음 버젼을 위해 예약만 해둔다 */
+    stat.Year = stat.Mon = 0;
     sscanf(date, "%4d%2d", &stat.Year, &stat.Mon);
+    /* month is used as an array index (security) */
+    if(stat.Year < 1970 || stat.Year > 9999 || stat.Mon < 1 || stat.Mon > 12) qError("Invalid date.");
   }
 
   snprintf(buf, sizeof(buf), "%s/%s/%s.%s", sys->RealBasePath, sys->StatDirectory, db->db, sys->StatExtension);

@@ -454,6 +454,15 @@ void cwb_writesave(SysConfig *sys, DB *db, DBConfig *conf){
 
       dataExist = TRUE;
 
+      /* the form hides the upload field, but a crafted request must be refused too (security) */
+      if(strcmp(conf->UploadEnable, "true") || strcmp(sys->AllowUpload, "true")) qError("File uploading is disabled.");
+      if(atoi(sys->UploadSoftLimit) > 0 || atoi(sys->UploadHardLimit) > 0) {
+        char dbpath[0xff];
+
+        snprintf(dbpath, sizeof(dbpath), "%s/%s/%s.%s", sys->RealBasePath, sys->DataDirectory, db->db, sys->DataExtension);
+        if(atoi(sys->UploadSoftLimit) < uploadSum(dbpath, conf->LastNum) / 1024) qError("Uploading is locked until downsizing under %d Kbytes.", atoi(sys->UploadSoftLimit));
+      }
+
       /* Hard 업로딩 제한 검사 */
       if(atoi(sys->UploadHardLimit) > 0) {
         char dbpath[0xff];

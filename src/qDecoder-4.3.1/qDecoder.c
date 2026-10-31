@@ -661,6 +661,8 @@ void qSetCookie(char *name, char *value, int exp_days, char *domain, char *path,
   }
 
   _qstrcat(cookie, "; HttpOnly", sizeof(cookie));
+  /* never sent with cross-site requests (CSRF) */
+  _qstrcat(cookie, "; SameSite=Strict", sizeof(cookie));
 
   printf("Set-Cookie: %s\n", cookie);
 }

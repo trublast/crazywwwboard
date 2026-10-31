@@ -15,6 +15,7 @@
 #include <string.h>
 #include <time.h>
 #include <sys/stat.h>
+#include <ctype.h>
 #include "gdbm.h"
 #include "gdbm_lib.h"
 #include "qDecoder.h"
@@ -236,6 +237,7 @@ Entry *getRealtimeConfig(SysConfig *sys, char *filename) {
   FetchConf(CookieExpireDays);
 
   FetchConf(PageLinkNum);
+  if(atoi(sys->PageLinkNum) <= 0) sys->PageLinkNum = "10"; /* used as divisor */
 
   FetchConf(TextFieldLength);
 
@@ -275,6 +277,9 @@ void getConfig(SysConfig *sys, DB *db, DBConfig *conf){
   if((db->mode = qValue("mode")) == NULL) db->mode = "list";
   /* page */
   if((db->page = qiValue("page")) == 0) db->page = 1;
+  /* negative page indexed memory before the list index (security) */
+  if(db->page < 1) db->page = 1;
+  if(db->page > 1000000) db->page = 1000000;
   /* num */
   db->num = qiValue("num");
 
@@ -312,8 +317,18 @@ void getConfig(SysConfig *sys, DB *db, DBConfig *conf){
     db->password = strdup(tmp);
   }
 
+  /* state changing operations are accepted by POST only : a link or an image
+     on another site (CSRF) must not be authorized by the password cookie or
+     by a password in the URL. password_form() asks again and POSTs. */
+  if(!strcmp(db->mode, "writesave") || !strcmp(db->mode, "modifysave") ||
+     !strcmp(db->mode, "delete")    || !strcmp(db->mode, "batchdelete") ||
+     !strcmp(db->mode, "adminsave") || !strcmp(db->mode, "sync")) {
+    if(strcmp(qGetEnv("REQUEST_METHOD", ""), "POST")) db->password = NULL;
+  }
+
   /* backdepth */
   db->backdepth = qiValue("backdepth");
+  if(db->backdepth < 0 || db->backdepth > 100) db->backdepth = 0;
 
   /*************************************************************
   ** DB에서 Configuration을 얻는다.
@@ -411,6 +426,17 @@ void getConfig(SysConfig *sys, DB *db, DBConfig *conf){
   FetchNull(StatMode, "anybody");
 
   FetchZero(LastNum, 0);
+
+  /* used as divisor in the list module */
+  if(atoi(conf->ArticlesPerPage) <= 0 || atoi(conf->ArticlesPerPage) > 1000) conf->ArticlesPerPage = "15";
+
+  /* When the system administrator does not allow HTML of board administrators
+     (AllowDBhtml = false), these texts are shown as plain text. The admin form
+     shows the original values, so they are kept there. */
+  if(strcmp(sys->AllowDBhtml, "true") && strcmp(db->mode, "admin")) {
+    conf->SubjectText = qHtmlEncode(conf->SubjectText);
+    conf->Category    = qHtmlEncode(conf->Category);
+  }
 
 #undef FetchNull
 #undef FetchZero
@@ -567,6 +593,8 @@ void headHtml(SysConfig *sys, DBConfig *conf) {
 
     printf("<html>\n");
     printf("<head>\n");
+    /* board administrator's text is plain text unless HTML is allowed (security) */
+    if(strcmp(sys->AllowDBhtml, "true")) title = qHtmlEncode(title);
     if(strcmp(title,   "")) printf("  <title>%s</title>\n", title);
     if(strcmp(charset, "")) printf("  <meta http-equiv=\"Content-Type\" content=\"text/html; charset=%s\">\n", charset);
     if(!strcmp(conf->UnderlinedLink, "false")) {
@@ -586,7 +614,7 @@ void headHtml(SysConfig *sys, DBConfig *conf) {
     /* DB Message */
     printf("\n<!-- Caption -->\n");
     printf("<table border=0 width=%s><tr><th>\n", conf->TableWidth);
-    printf("  <font size='%d'>%s</font>\n", atoi(conf->FontSize) + 1, conf->Message);
+    printf("  <font size='%d'>%s</font>\n", atoi(conf->FontSize) + 1, strcmp(sys->AllowDBhtml, "true") ? qHtmlEncode(conf->Message) : conf->Message);
     printf("</th></tr></table>\n");
   }
   else {
@@ -706,6 +734,159 @@ char *removeCtrl(char *str) {
 }
 
 /* 라이센스키 검사 */
+/*****************************************************************************
+** HTML filter for boards which accept HTML in articles (security)
+**
+** Articles are written by anybody, so raw HTML would be stored XSS.
+** Only harmless tags and attributes of a whitelist are kept and they are
+** re-written in a canonical form : <name attr="value">. Attribute values are
+** restricted to safe characters and URLs to http, https, ftp and mailto.
+** Everything else is shown as text. Returns a malloc()ed string.
+*****************************************************************************/
+typedef struct {
+  char   *s;
+  size_t len, size;
+} SafeBuf;
+
+static void sbPut(SafeBuf *b, const char *str, size_t n) {
+  if(b->len + n + 1 > b->size) {
+    char *tmp;
+    size_t size = (b->size + n + 1) * 2;
+    if((tmp = (char *)malloc(size)) == NULL) qError("Memory allocation fail.");
+    memcpy(tmp, b->s, b->len);
+    free(b->s);
+    b->s = tmp, b->size = size;
+  }
+  memcpy(b->s + b->len, str, n);
+  b->len += n;
+  b->s[b->len] = '\0';
+}
+#define sbStr(B, STR) sbPut(B, STR, strlen(STR))
+
+static char *safeTags[] = {
+  "a", "b", "i", "u", "s", "strike", "em", "strong", "font", "br", "p", "hr", "center",
+  "div", "span", "pre", "blockquote", "ul", "ol", "li", "dl", "dt", "dd",
+  "table", "tbody", "thead", "tfoot", "caption", "tr", "td", "th", "img",
+  "h1", "h2", "h3", "h4", "h5", "h6", "sub", "sup", "tt", "code", "small", "big",
+  "nobr", "address", "cite", "q", NULL};
+static char *safeAttrs[] = {
+  "align", "valign", "width", "height", "border", "bgcolor", "color", "size", "face",
+  "colspan", "rowspan", "cellpadding", "cellspacing", "noshade", "nowrap", "alt",
+  "title", "target", "start", "clear", "hspace", "vspace", NULL};
+
+static int inList(char **list, const char *str) {
+  int i;
+  for(i = 0; list[i] != NULL; i++) if(!strcmp(list[i], str)) return TRUE;
+  return FALSE;
+}
+
+static int safeUrl(const char *v) {
+  const char *p;
+  if(strncasecmp(v, "http://", 7) && strncasecmp(v, "https://", 8) &&
+     strncasecmp(v, "ftp://", 6)  && strncasecmp(v, "mailto:", 7)) return FALSE;
+  for(p = v; *p; p++) {
+    if((unsigned char)*p <= 0x20 || *p == 0x7f || strchr("\"'<>`\\", *p) != NULL) return FALSE;
+  }
+  return TRUE;
+}
+
+static int safeValue(const char *v) {
+  const char *p;
+  for(p = v; *p; p++) {
+    unsigned char c = (unsigned char)*p;
+    if(c >= 0x80 || isalnum(c) || strchr(" #%.,:_-", c) != NULL) continue;
+    return FALSE;
+  }
+  return TRUE;
+}
+
+/* parse a tag at s[i] == '<', emit it if allowed, return the index after '>' or 0 */
+static size_t safeTag(const char *s, size_t i, SafeBuf *b) {
+  char name[16], attr[32], *val;
+  size_t p = i + 1, mark = b->len, vs, ve;
+  int  k, close = FALSE, hasval;
+
+  if(s[p] == '/') close = TRUE, p++;
+  for(k = 0; isalnum((unsigned char)s[p]) && k < (int)sizeof(name) - 1; p++, k++) name[k] = tolower((unsigned char)s[p]);
+  name[k] = '\0';
+  if(k == 0 || isalnum((unsigned char)s[p]) || !inList(safeTags, name)) return 0;
+
+  sbStr(b, close ? "</" : "<");
+  sbStr(b, name);
+
+  for(;;) {
+    while(isspace((unsigned char)s[p]) || s[p] == '/') p++;
+    if(s[p] == '>') { sbStr(b, ">"); return p + 1; }
+    if(s[p] == '\0' || s[p] == '<') { b->len = mark, b->s[mark] = '\0'; return 0; }
+
+    /* attribute name */
+    for(k = 0; s[p] && !isspace((unsigned char)s[p]) && strchr("=></\"'", s[p]) == NULL; p++) {
+      if(k < (int)sizeof(attr) - 1) attr[k++] = tolower((unsigned char)s[p]);
+    }
+    attr[k] = '\0';
+    if(k == 0) { p++; continue; } /* garbage, skip it */
+
+    /* attribute value */
+    while(isspace((unsigned char)s[p])) p++;
+    hasval = FALSE, vs = ve = p;
+    if(s[p] == '=') {
+      p++;
+      while(isspace((unsigned char)s[p])) p++;
+      if(s[p] == '\"' || s[p] == '\'') {
+        char q = s[p];
+        vs = ++p;
+        while(s[p] && s[p] != q) p++;
+        if(s[p] == '\0') { b->len = mark, b->s[mark] = '\0'; return 0; }
+        ve = p++;
+      }
+      else {
+        vs = p;
+        while(s[p] && !isspace((unsigned char)s[p]) && s[p] != '>' && s[p] != '<') p++;
+        ve = p;
+      }
+      hasval = TRUE;
+    }
+    if(close) continue; /* closing tags have no attributes */
+
+    if((val = (char *)malloc(ve - vs + 1)) == NULL) qError("Memory allocation fail.");
+    memcpy(val, s + vs, ve - vs);
+    val[ve - vs] = '\0';
+
+    if((!strcmp(name, "a") && !strcmp(attr, "href")) || (!strcmp(name, "img") && !strcmp(attr, "src"))) {
+      if(hasval && safeUrl(val)) {
+        sbStr(b, " "), sbStr(b, attr), sbStr(b, "=\""), sbStr(b, val), sbStr(b, "\"");
+      }
+    }
+    else if(inList(safeAttrs, attr)) {
+      if(hasval == FALSE) sbStr(b, " "), sbStr(b, attr);
+      else if(safeValue(val)) {
+        sbStr(b, " "), sbStr(b, attr), sbStr(b, "=\""), sbStr(b, val), sbStr(b, "\"");
+      }
+    }
+    free(val);
+  }
+}
+
+char *safeHtml(char *src) {
+  SafeBuf b;
+  size_t i, next;
+
+  b.size = strlen(src) + 64, b.len = 0;
+  if((b.s = (char *)malloc(b.size)) == NULL) qError("Memory allocation fail.");
+  b.s[0] = '\0';
+
+  for(i = 0; src[i] != '\0'; ) {
+    if(src[i] == '<') {
+      if((next = safeTag(src, i, &b)) == 0) { sbStr(&b, "&lt;"); i++; }
+      else i = next;
+    }
+    else if(src[i] == '>') { sbStr(&b, "&gt;"); i++; }
+    else { sbPut(&b, src + i, 1); i++; }
+  }
+
+  return b.s;
+}
+
 int license_check(char *LicenseKey, char *SecureKey) {
   char script_path[0xff], *pt, buf[0xff];
 

@@ -1,3 +1,6 @@
+/* master password of CrazyAdmin.cgi, in the same directory */
+#define MASTER_PASSWORD_FILE	"CrazyAdmin.conf"
+
 #define PASS_FAIL	(0)
 #define PASS_ADMIN	(1)
 #define PASS_POSTER	(2)

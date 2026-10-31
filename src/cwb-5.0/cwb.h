@@ -302,6 +302,7 @@ void tailAdmin(void);
 void runTime(void);
 char *exchangeQuot(char *str);
 char *removeCtrl(char *str);
+char *safeHtml(char *src);
 
 /* common system functions */
 char *crypt(const char *, const char *);

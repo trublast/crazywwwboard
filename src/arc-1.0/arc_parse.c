@@ -101,6 +101,8 @@ int arc_parse(DBArticle *article) {
     }
     value[c_count++] = (char)c;
   }
+  if(c_count == 0) value = strdup(""); /* arc_write() frees it */
+  if(value == NULL) qError("%s : Memory allocation fail.", OFFICIAL_GATEPRG_NAME);
   value[c_count] = '\0';
   article->Text = value;
   article->Lines = getlines(article->Text);

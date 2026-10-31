@@ -171,7 +171,8 @@ void cwb_read(Entry *sysp, SysConfig *sys, DB *db, DBConfig *conf){
           printf("  <hr size=1 noshade width=250 align=left>\n");
 
           printf("<!---------- Cut here ---------->\n");
-          previewFile(pfilepath, atoi(sys->PreviewLines), filter);
+          /* uploaded files are never shown as HTML (security) */
+          previewFile(pfilepath, atoi(sys->PreviewLines), filter == 10 ? (strcmp(conf->LinkTarget, "") ? 13 : 12) : filter);
           printf("\n<!---------- Cut here ---------->\n");
 
           printf("  </font>\n");
@@ -211,7 +212,12 @@ void cwb_read(Entry *sysp, SysConfig *sys, DB *db, DBConfig *conf){
         printf("</b></font></center>\n");
       }
       else { /* 라이센스가 정확하거나, 유효기간이 안지났을 경유 */
-        highlightStr(filter, article.Text, db->fval);
+        if(filter == 10) { /* HTML mode : only whitelisted HTML (security) */
+          char *safe = safeHtml(article.Text);
+          highlightStr(filter, safe, db->fval);
+          free(safe);
+        }
+        else highlightStr(filter, article.Text, db->fval);
       }
 
       printf("\n<!---------- Cut here ---------->\n");

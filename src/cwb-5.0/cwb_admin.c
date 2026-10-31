@@ -33,6 +33,25 @@ void t_hr(int colspan);
 
 /* 비밀번호를 조회하는 gateway이다. 비밀번호가 상이할경우 비밀번호 입력 폼을 출력한다 */
 int check_password(SysConfig *sys, DB *db, DBConfig *conf){
+  /* A new board has no password yet. Before, the first visitor became its
+     administrator. Now the first configuration needs the master password
+     of CrazyAdmin.cgi (CrazyAdmin.conf in the same directory). */
+  if(conf->Password == NULL) {
+    FILE *fp;
+    char master[0xff];
+
+    strcpy(master, "");
+    if((fp = fopen(MASTER_PASSWORD_FILE, "rt")) != NULL) {
+      if(fgets(master, sizeof(master), fp) == NULL) strcpy(master, "");
+      fclose(fp);
+    }
+    qRemoveSpace(master);
+    if(strlen(master) == 0) qError("This board is not configured yet. Set the master password of CrazyAdmin first.");
+
+    if(db->password == NULL || strcmp(master, db->password)) password_form(sys, db, conf);
+    return PASS_NOT_DEFINE;
+  }
+
   /* DB에 비밀번호가 없음, 초기 비밀번호 제작을 위해 복귀 */
   if(conf->Password == NULL) return PASS_NOT_DEFINE;
 
@@ -88,6 +107,9 @@ void password_form(SysConfig *sys, DB *db, DBConfig *conf){
   printf("  <input type='hidden' name='fval'       value='%s'>\n", qHtmlEncode(db->fval));
   printf("  <input type='hidden' name='backdepth'  value='%d'>\n", db->backdepth + 1);
 
+  if(conf->Password == NULL) {
+    printf("  <tr><td colspan=2 align=center><font size=2 face='arial'>This board is not configured yet. Enter the master password of CrazyAdmin.</font></td></tr>\n");
+  }
   printf("  <tr><td colspan=2><br></td></tr>\n");
 
   printf("  <tr>\n");
@@ -383,6 +405,9 @@ void cwb_adminsave(SysConfig *sys, DB *db, DBConfig *conf){
       if(strpbrk(value, "'\"<> \t\r\n") != NULL) qError("Invalid character in URL.");
     }
   }
+
+  /* used as divisor in the list module */
+  if(qValue("cArticlesPerPage") != NULL && (atoi(qValue("cArticlesPerPage")) < 1 || atoi(qValue("cArticlesPerPage")) > 999)) qError("Articles / Page must be 1 - 999.");
 
   if(pass == PASS_NOT_DEFINE && !strcmp("", qRemoveSpace(qValue("cPassword"))))qError("You must specify the password, when you configure a db at first time.");
 
