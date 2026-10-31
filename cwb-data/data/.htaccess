@@ -1,6 +1,7 @@
 # CrazyWWWBoard : database files must not be downloaded via HTTP (security).
 # Uploaded files stay public because images are shown inline.
-<FilesMatch "\.(gdbm|stat-gdbm)$">
+# '#NAME.gdbm#' is the temporary copy made while gdbm reorganizes a board
+<FilesMatch "(\.(gdbm|stat-gdbm)|#)$">
   <IfModule mod_authz_core.c>
     Require all denied
   </IfModule>
